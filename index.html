@@ -1535,8 +1535,18 @@ function damagePlayer(dmg,from){
 }
 function playerDies(){
   playerDead=true; state='dead'; mouseDown=rmb=false;
-  $('dead').style.display='flex'; $('deadInfo').innerHTML=`You reached wave ${wave} with ${kills} kills.<br>Your saved progress is lost: the campaign starts again from Stalingrad, wave 1.`;
-  clearSave();
+  $('dead').style.display='flex';
+  if(checkpoint){
+    $('deadInfo').innerHTML=`You reached ${MAPS[currentMap].short} wave ${wave} with ${kills} kills.<br>You will respawn at your checkpoint: <b>${MAPS[checkpoint.map].short} · WAVE ${checkpoint.wave}</b>.`;
+    $('respawnBtn').textContent=`RESPAWN AT CHECKPOINT (${MAPS[checkpoint.map].short} WAVE ${checkpoint.wave})`;
+    // the save now points at the checkpoint
+    try{ localStorage.setItem(SAVE_KEY,JSON.stringify({map:checkpoint.map,mapName:MAPS[checkpoint.map].name,reserve:checkpoint.reserve,side:selSide,weapon:gun.type,
+      wave:checkpoint.wave,kills:checkpoint.kills,checkpoint,savedAt:Date.now()})); }catch(e){}
+  } else {
+    $('deadInfo').innerHTML=`You reached wave ${wave} with ${kills} kills.<br>No checkpoint yet (it unlocks at wave ${CHECKPOINT_WAVE}), so the campaign starts again from Stalingrad, wave 1.`;
+    $('respawnBtn').textContent='RESTART FROM WAVE 1';
+    clearSave();
+  }
   document.body.style.cursor='default';
   if(document.pointerLockElement) document.exitPointerLock();
 }
@@ -1551,8 +1561,11 @@ function respawnPlayer(){
 }
 
 const WAVE_SPAWNS=[[-4,-45],[0,-46],[4,-45],[-2,-48],[2,-48],[-5,-42],[5,-42],[0,-43],[-3,-40],[3,-40],[46,-46],[40,-48],[-30,-48],[-33,-46]];
+let checkpoint=null; // {map, wave, kills, reserve}
+const CHECKPOINT_WAVE=3;
 function spawnWave(){
   startProtection();
+  if(wave===CHECKPOINT_WAVE){ checkpoint={map:currentMap,wave,kills,reserve:gun.reserve}; setTimeout(()=>showMsg(`CHECKPOINT REACHED · ${MAPS[currentMap].short} WAVE ${wave}`,3),3200); }
   const enemySide = selSide==='soviet'?'german':'soviet', E=SIDES[enemySide];
   const n=Math.min(16,4+wave*2+MAP_ORDER.indexOf(currentMap)*2);
   for(let i=0;i<n;i++){
@@ -1875,7 +1888,7 @@ const SAVE_KEY='easternFront_save_v1';
 function readSave(){ try{ const t=localStorage.getItem(SAVE_KEY); if(!t) return null; const d=JSON.parse(t); if(d && !MAPS[d.map]) d.map='stalingrad'; return (d && SIDES[d.side] && WEAPONS[d.weapon]) ? d : null; }catch(e){ return null; } }
 function writeSave(silent){
   try{
-    localStorage.setItem(SAVE_KEY,JSON.stringify({map:currentMap,mapName:MAPS[currentMap].name,reserve:gun.reserve,side:selSide,weapon:gun.type,wave,kills,savedAt:Date.now()}));
+    localStorage.setItem(SAVE_KEY,JSON.stringify({map:currentMap,mapName:MAPS[currentMap].name,reserve:gun.reserve,side:selSide,weapon:gun.type,wave,kills,checkpoint,savedAt:Date.now()}));
     if(!silent) showMsg('GAME SAVED · WAVE '+wave,1.6);
     return true;
   }catch(e){ if(!silent) showMsg('COULD NOT SAVE (browser storage is blocked)',2.5); return false; }
@@ -1887,9 +1900,8 @@ function refreshContinue(){
     b.innerHTML=`CONTINUE<div style="font-size:13px;letter-spacing:1px;margin-top:4px;opacity:.8">${d.mapName||'Stalingrad'} · ${SIDES[d.side].title} · ${WEAPONS[d.weapon].name} · WAVE ${d.wave} · ${d.kills} KILLS</div>`; }
   else { b.style.display='none'; $('deleteSave').style.display='none'; }
 }
-function continueGame(){
-  const d=readSave(); if(!d) return;
-  selSide=d.side; selWeapon=d.weapon;
+function resumeFrom(d){
+  selSide=d.side||selSide; selWeapon=d.weapon||selWeapon;
   if(currentMap!==d.map){ clearSoldiers(); buildMap(d.map); visCols=null; }
   startGame();
   kills=d.kills||0;
@@ -1898,6 +1910,11 @@ function continueGame(){
     for(const e of enemies){ scene.remove(e.root); const i=shootables.indexOf(e.root); if(i>=0) shootables.splice(i,1); }
     enemies=[]; wave=d.wave; spawnWave();
   }
+}
+function continueGame(){
+  const d=readSave(); if(!d) return;
+  resumeFrom(d);
+  checkpoint=d.checkpoint||checkpoint;
 }
 
 
@@ -1981,13 +1998,18 @@ $('deploy').onclick=()=>{
   if(d && d.wave>1 && !confirm(`Start a new game? Your saved game (wave ${d.wave}) will be replaced.`)) return;
   initAudio();
   if(currentMap!=='stalingrad'){ clearSoldiers(); buildMap('stalingrad'); visCols=null; }
-  startGame(); writeSave(true); lockPointer();
+  checkpoint=null; startGame(); writeSave(true); lockPointer();
 };
 $('continueBtn').onclick=()=>{ initAudio(); continueGame(); lockPointer(); };
 $('deleteSave').onclick=()=>{ clearSave(); refreshContinue(); };
 $('saveBtn').onclick=()=>{ writeSave(false); };
 $('resume').onclick=()=>{ initAudio(); lockPointer(); };
-$('respawnBtn').onclick=()=>{ initAudio(); if(currentMap!=='stalingrad'){ clearSoldiers(); buildMap('stalingrad'); visCols=null; } startGame(); lockPointer(); };
+$('respawnBtn').onclick=()=>{
+  initAudio();
+  if(checkpoint){ const cp=checkpoint; resumeFrom({map:cp.map,wave:cp.wave,kills:cp.kills,reserve:cp.reserve}); checkpoint=cp; }
+  else { if(currentMap!=='stalingrad'){ clearSoldiers(); buildMap('stalingrad'); visCols=null; } startGame(); }
+  lockPointer();
+};
 $('deadMenu').onclick=()=>{ playerDead=false; $('dead').style.display='none'; $('toMenu').onclick(); };
 $('toMenu').onclick=()=>{
   refreshContinue();
