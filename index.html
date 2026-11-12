@@ -1938,6 +1938,8 @@ function goToMap(id){
   spawnWorld(selSide,gun.type,false);
   Object.assign(player,{pos:SPAWN.clone(),vel:new V3(),yaw:0,pitch:0,crouch:false,crouchToggle:false});
   playerHP=100; grenadesLeft=3; wave=1; waveTimer=0;
+  checkpoint={map:id,wave:1,kills,reserve:gun.reserve};   // arriving on a new map is a checkpoint
+  setTimeout(()=>showMsg(`CHECKPOINT REACHED · ${MAPS[id].short} WAVE 1`,3),3800);
   $('mapdone').style.opacity=0;
   showMsg(`${MAPS[id].name.toUpperCase()} · WAVE 1`,3.5);
   $('side').textContent=SIDES[selSide].title+' · '+WEAPONS[gun.type].name+' · '+MAPS[id].short;
