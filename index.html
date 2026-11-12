@@ -384,7 +384,7 @@ function makeWeapon(type){
 }
 
 /* ================= SOLDIER MODEL ================= */
-const HY=0.92; // hip height
+const HY=0.93; // hip height
 function makeLabel(text,color){
   const c=document.createElement('canvas'); c.width=256; c.height=64; const x=c.getContext('2d');
   x.font='bold 28px Courier New'; x.textAlign='center';
@@ -396,96 +396,250 @@ function makeLabel(text,color){
   return s;
 }
 
-function makeBoxSoldier(sideKey,weaponKey,label){
-  const S=SIDES[sideKey];
-  const root=new THREE.Group();
-  const uni=mat(S.uniform), pants=mat(S.pants), boots=mat(S.boots,{roughness:.6});
-  const skin=mat(0xd6a782,{roughness:.8}), helm=mat(S.helmet,{roughness:.6,metalness:.3});
-  const leather=mat(0x3a2a1a,{roughness:.7});
+/* ================= DETAILED WW2 SOLDIER (built in code) ================= */
+const SKIN_TONES=[0xe2b796,0xd6a782,0xc8956d,0xeac3a4,0xbf8b66];
+const HAIR_COLS=[0x2a1f17,0x4a3423,0x6b4a2b,0x1c1a18,0x8a6a3e];
+const pickR=a=>a[(Math.random()*a.length)|0];
+function cap(r,len,m,sh=true){ const me=new THREE.Mesh(new THREE.CapsuleGeometry(r,Math.max(0.001,len),4,12),m); me.castShadow=sh; me.receiveShadow=true; return me; }
+function sph(r,m,sh=false,ws=14,hs=10){ const me=new THREE.Mesh(new THREE.SphereGeometry(r,ws,hs),m); me.castShadow=sh; me.receiveShadow=true; return me; }
+function sbox(w,h,d,m){ const me=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m); me.receiveShadow=true; return me; } // small detail, no shadow
+function scyl(rt,rb,h,m,seg=14,sh=false){ const me=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg),m); me.castShadow=sh; me.receiveShadow=true; return me; }
+const UPV=new V3(0,1,0), DOWNV=new V3(0,-1,0);
+function capBetween(a,b,r,m,sh=true){ // capsule from point a to point b
+  const d=a.distanceTo(b), me=cap(r,d-2*r,m,sh);
+  me.position.copy(a).add(b).multiplyScalar(.5);
+  me.quaternion.setFromUnitVectors(UPV,b.clone().sub(a).normalize());
+  return me;
+}
+function strapBetween(a,b,w,m){ const me=sbox(w,0.008,a.distanceTo(b),m); me.position.copy(a).add(b).multiplyScalar(.5); me.lookAt(b); return me; }
+function segment(r,len,m){ const j=new THREE.Group(); const c=cap(r,len-2*r,m); c.position.y=-len/2; j.add(c); return j; }
+function starGeo(r){
+  const s=new THREE.Shape();
+  for(let i=0;i<10;i++){ const a=i/10*Math.PI*2-Math.PI/2, rr=i%2?r*0.42:r, x=Math.cos(a)*rr, y=-Math.sin(a)*rr; i?s.lineTo(x,y):s.moveTo(x,y); }
+  return new THREE.ShapeGeometry(s);
+}
+function redStar(r){ const m=new THREE.Mesh(starGeo(r),mat(0xb3261e,{roughness:.4,metalness:.3,side:THREE.DoubleSide})); m.rotation.y=Math.PI; return m; }
 
-  // legs (pivot at the hip so they can swing)
+const helmetGeoCache={};
+function helmetGeo(german){
+  const k=german?'g':'s'; if(helmetGeoCache[k]) return helmetGeoCache[k];
+  const pts = german
+    ? [[0,0.145],[0.05,0.143],[0.09,0.132],[0.12,0.112],[0.142,0.08],[0.152,0.045],[0.156,0.012],[0.166,-0.02],[0.182,-0.048],[0.19,-0.062]]
+    : [[0,0.152],[0.05,0.15],[0.09,0.139],[0.12,0.117],[0.143,0.082],[0.154,0.042],[0.159,0.008],[0.163,-0.01],[0.17,-0.02]];
+  const g=new THREE.LatheGeometry(pts.map(p=>new THREE.Vector2(p[0],p[1])),32);
+  if(german){ // short visor at the front, deep flared skirt at the back and sides
+    const pa=g.attributes.position;
+    for(let i=0;i<pa.count;i++){
+      const x=pa.getX(i), y=pa.getY(i), z=pa.getZ(i);
+      if(y<0.03){ const r=Math.hypot(x,z)||1, front=Math.max(0,-z/r); pa.setY(i,0.03+(y-0.03)*(1-0.6*front*front)); }
+    }
+    g.computeVertexNormals();
+  }
+  return helmetGeoCache[k]=g;
+}
+function makeHelmetMesh(sideKey){
+  const S=SIDES[sideKey], g=new THREE.Group();
+  const m=new THREE.Mesh(helmetGeo(sideKey==='german'),mat(S.helmet,{roughness:.55,metalness:.35,side:THREE.DoubleSide}));
+  m.castShadow=true; m.receiveShadow=true; g.add(m);
+  // chin strap
+  const strap=mat(0x2b1d12,{roughness:.7});
+  for(const sx of [-1,1]){ const st=sbox(0.012,0.12,0.02,strap); st.position.set(sx*0.1,-0.07,-0.02); st.rotation.z=sx*0.25; g.add(st); }
+  return g;
+}
+
+function makeHead(skinCol,hairCol){
+  const g=new THREE.Group();
+  const skin=mat(skinCol,{roughness:.75}), hair=mat(hairCol,{roughness:1}), dark=mat(0x1b1510,{roughness:.5});
+  const skull=sph(0.105,skin,true,18,14); skull.scale.set(0.93,1.08,1.04); g.add(skull);
+  const jaw=sph(0.082,skin,false,16,10); jaw.scale.set(1,0.82,1); jaw.position.set(0,-0.052,-0.014); g.add(jaw);
+  const chin=sph(0.03,skin); chin.scale.set(1.3,0.9,1); chin.position.set(0,-0.092,-0.06); g.add(chin);
+  const nose=sbox(0.024,0.05,0.035,skin); nose.position.set(0,-0.004,-0.108); nose.rotation.x=-0.18; g.add(nose);
+  const tip=sph(0.014,skin); tip.position.set(0,-0.026,-0.122); g.add(tip);
+  const white=mat(0xe9e3d9,{roughness:.4});
+  for(const sx of [-1,1]){
+    const ear=sph(0.026,skin); ear.scale.set(0.45,1,0.8); ear.position.set(sx*0.098,-0.005,0.008); g.add(ear);
+    const eye=sph(0.0135,white,false,10,8); eye.position.set(sx*0.037,0.016,-0.094); g.add(eye);
+    const pupil=sph(0.0075,dark,false,8,6); pupil.position.set(sx*0.037,0.016,-0.105); g.add(pupil);
+    const lid=sbox(0.03,0.008,0.012,skin); lid.position.set(sx*0.037,0.03,-0.1); g.add(lid);
+    const brow=sbox(0.04,0.011,0.014,hair); brow.position.set(sx*0.04,0.042,-0.1); brow.rotation.z=sx*-0.12; g.add(brow);
+    const cheek=sph(0.03,skin); cheek.position.set(sx*0.05,-0.025,-0.075); g.add(cheek);
+  }
+  const mouth=sbox(0.038,0.007,0.01,mat(0x8a4f45,{roughness:.6})); mouth.position.set(0,-0.062,-0.094); g.add(mouth);
+  const lip=sbox(0.03,0.008,0.01,mat(0xa8665a,{roughness:.6})); lip.position.set(0,-0.07,-0.092); g.add(lip);
+  if(Math.random()<0.4){ // stubble
+    const stub=sph(0.084,mat(new THREE.Color(skinCol).lerp(new THREE.Color(hairCol),0.35).getHex(),{roughness:1}),false,16,10);
+    stub.scale.set(1.01,0.8,1.01); stub.position.set(0,-0.056,-0.012); g.add(stub);
+  }
+  const hairCap=new THREE.Mesh(new THREE.SphereGeometry(0.108,18,12,0,Math.PI*2,0,Math.PI*0.52),hair);
+  hairCap.scale.set(0.95,1.08,1.06); hairCap.position.y=0.006; hairCap.rotation.x=0.45; g.add(hairCap);
+  return g;
+}
+
+function makeBoxSoldier(sideKey,weaponKey,label){
+  const S=SIDES[sideKey], german=sideKey==='german';
+  const root=new THREE.Group(), body=new THREE.Group(); root.add(body);
+  const uni=mat(S.uniform,{roughness:.95}), pants=mat(S.pants,{roughness:.95});
+  const uniDark=mat(new THREE.Color(S.uniform).multiplyScalar(0.78).getHex(),{roughness:.95});
+  const leather=mat(german?0x16130f:0x4a3020,{roughness:.6});
+  const bootM=mat(german?0x15120f:0x241a12,{roughness:.55});
+  const button=mat(german?0x8b8d86:0x6f6a3a,{roughness:.4,metalness:.6});
+  const canvasM=mat(german?0x6b6a52:0x8a8060,{roughness:1});
+  const skinCol=pickR(SKIN_TONES), skin=mat(skinCol,{roughness:.75});
+  const puttees = !german && Math.random()<0.4;
+
+  // ---------- legs ----------
   const legs=[];
   for(const sx of [-1,1]){
-    const hip=new THREE.Group(); hip.position.set(0.11*sx,HY,0);
-    const leg=box(0.17,0.6,0.19,pants); leg.position.y=-0.3; hip.add(leg);
-    const boot=box(0.18,0.36,0.22,boots); boot.position.y=-0.74; hip.add(boot);
-    const foot=box(0.18,0.08,0.3,boots); foot.position.set(0,-0.88,-0.04); hip.add(foot);
-    root.add(hip); legs.push(hip);
+    const thigh=segment(0.08,0.45,pants); thigh.position.set(0.095*sx,HY,0); body.add(thigh);
+    if(!german){ const flare=sph(0.092,pants,true); flare.scale.set(1.15,1.7,1.05); flare.position.set(sx*0.015,-0.17,0); thigh.add(flare); } // breeches
+    const knee=segment(0.062,0.44,pants); knee.position.y=-0.45; thigh.add(knee);
+    if(puttees){
+      const wrap=mat(0x7a7055,{roughness:1});
+      const p=cap(0.066,0.12,wrap); p.position.y=-0.3; knee.add(p);
+      for(let r=0;r<4;r++){ const ring=scyl(0.069,0.069,0.012,mat(0x6a6048)); ring.position.y=-0.24-r*0.035; ring.rotation.z=0.12; knee.add(ring); }
+      const ank=cap(0.068,0.04,bootM); ank.position.y=-0.405; knee.add(ank);
+    } else { // tall jackboots
+      const boot=cap(0.07,0.22,bootM); boot.position.y=-0.3; knee.add(boot);
+      const top=scyl(0.074,0.072,0.03,bootM,14,true); top.position.y=-0.17; knee.add(top);
+    }
+    const foot=box(0.1,0.075,0.27,bootM); foot.position.set(0,-0.405,-0.055); knee.add(foot);
+    const toe=sph(0.05,bootM,true); toe.scale.set(1,0.7,1); toe.position.set(0,-0.415,-0.17); knee.add(toe);
+    const sole=sbox(0.105,0.02,0.29,mat(0x0e0c0a)); sole.position.set(0,-0.44,-0.065); knee.add(sole);
+    legs.push({thigh,knee});
   }
 
-  // upper body (pivot at hip)
-  const upper=new THREE.Group(); upper.position.y=HY; root.add(upper);
+  // ---------- upper body ----------
+  const upper=new THREE.Group(); upper.position.y=HY; body.add(upper);
   const U=(m,x,y,z)=>{ m.position.set(x,y-HY,z); upper.add(m); return m; };
-  U(box(0.4,0.2,0.24,pants),0,0.97,0);
-  U(box(0.46,0.56,0.26,uni),0,1.3,0);
-  U(box(0.48,0.16,0.28,uni),0,1.04,0);
-  U(box(0.49,0.06,0.29,leather),0,1.08,0);
-  U(box(0.1,0.08,0.1,skin),0,1.6,0);
-  const head=new THREE.Mesh(new THREE.SphereGeometry(0.115,14,10),skin); head.scale.y=1.15; shade(head); U(head,0,1.72,0);
+  const pelvis=cap(0.13,0.14,pants); pelvis.rotation.z=Math.PI/2; pelvis.scale.set(1,1,0.8); U(pelvis,0,0.95,0);
+  const torso=cap(0.165,0.3,uni); torso.scale.set(1.2,1,0.72); U(torso,0,1.23,0);
+  const chest=sph(0.17,uni,true); chest.scale.set(1.18,0.75,0.78); U(chest,0,1.38,-0.01);
+  const skirt=scyl(0.19,0.212,0.2,uni,18,true); skirt.scale.z=0.76; U(skirt,0,0.97,0);
+  for(const sx of [-1,1]){ const sh=sph(0.068,uni,true); U(sh,sx*0.2,1.45,0); }
+  // collar, neck, head
+  const collar=scyl(0.062,0.068,0.055,german?uniDark:uni,16,true); U(collar,0,1.545,-0.005);
+  const neck=scyl(0.045,0.05,0.09,skin,12,true); U(neck,0,1.58,0);
+  const head=makeHead(skinCol,pickR(HAIR_COLS)); U(head,0,1.69,-0.005);
+
+  // belt
+  const belt=scyl(0.2,0.2,0.055,leather,20,true); belt.scale.z=0.77; U(belt,0,1.06,0);
+  const buckle=sbox(0.065,0.05,0.015,button); U(buckle,0,1.06,-0.158);
 
   // headgear
-  if(sideKey==='soviet' && Math.random()<0.35){ // ushanka fur hat
-    const fur=mat(0x5a4632,{roughness:1});
-    U(box(0.27,0.13,0.27,fur),0,1.83,0);
-    U(box(0.05,0.14,0.18,fur),0.13,1.73,0.02); U(box(0.05,0.14,0.18,fur),-0.13,1.73,0.02);
-    U(box(0.27,0.06,0.05,fur),0,1.79,-0.135);
-  } else {
-    const dome=shade(new THREE.Mesh(new THREE.SphereGeometry(0.15,16,10,0,Math.PI*2,0,Math.PI/2),helm));
-    dome.scale.y = sideKey==='german'?0.85:0.95; U(dome,0,1.77,0);
-    if(sideKey==='german'){
-      const skirt=shade(new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.185,0.08,16,1,true),
-        mat(S.helmet,{roughness:.6,metalness:.3,side:THREE.DoubleSide})));
-      U(skirt,0,1.735,0.01);
-    } else {
-      U(cyl(0.152,0.165,0.03,helm,16),0,1.765,0);
+  const r=Math.random();
+  if(german || r<0.6){
+    const hel=makeHelmetMesh(sideKey); hel.position.set(0,0.045,0); hel.scale.setScalar(1.02); head.add(hel);
+  } else if(r<0.82){ // ushanka
+    const fur=mat(0x5a4632,{roughness:1}), cloth=mat(0x4a4a3a,{roughness:1});
+    const crown=sph(0.118,cloth,true); crown.scale.set(1,0.72,1.05); crown.position.y=0.06; head.add(crown);
+    const band=scyl(0.122,0.122,0.06,fur,18,true); band.position.y=0.04; head.add(band);
+    const fr=sbox(0.2,0.06,0.03,fur); fr.position.set(0,0.07,-0.12); head.add(fr);
+    for(const sx of [-1,1]){ const fl=sbox(0.03,0.11,0.12,fur); fl.position.set(sx*0.112,-0.02,0.01); head.add(fl); }
+    const st=redStar(0.018); st.position.set(0,0.07,-0.137); head.add(st);
+  } else { // pilotka side cap
+    const pc=mat(S.uniform,{roughness:1});
+    const capM=cap(0.045,0.16,pc,true); capM.rotation.x=Math.PI/2; capM.scale.set(1.15,1,1); capM.position.set(0.015,0.1,0); capM.rotation.z=0.12; head.add(capM);
+    const st=redStar(0.014); st.position.set(0.012,0.1,-0.13); head.add(st);
+  }
+
+  // ---------- uniform details ----------
+  for(let i=0;i<(german?4:3);i++){ const b=sph(0.009,button); U(b,0,1.5-i*0.1,-0.128+i*0.004); }
+  if(german){
+    for(const sx of [-1,1]){
+      const tab=sbox(0.03,0.018,0.01,mat(0xa4a89a)); tab.position.set(sx*0.038,1.54-HY,-0.064); tab.rotation.y=-sx*0.5; upper.add(tab);
+      const cf=sbox(0.09,0.028,0.012,uniDark); U(cf,sx*0.09,1.39,-0.127); const cb=sph(0.008,button); U(cb,sx*0.09,1.383,-0.135);
+      const cp=sbox(0.1,0.1,0.01,uni); U(cp,sx*0.09,1.33,-0.123);
+      const lf=sbox(0.11,0.03,0.012,uniDark); U(lf,sx*0.12,1.0,-0.165); const lb=sph(0.008,button); U(lb,sx*0.12,0.993,-0.173);
+      const sb=sbox(0.06,0.016,0.13,uniDark); sb.position.set(sx*0.17,1.505-HY,0); sb.rotation.z=-sx*0.2; upper.add(sb);
+      // Y-straps (front and back)
+      upper.add(strapBetween(new V3(sx*0.11,1.5-HY,-0.1),new V3(sx*0.1,1.075-HY,-0.158),0.03,leather));
+      upper.add(strapBetween(new V3(sx*0.11,1.5-HY,0.1),new V3(0,1.3-HY,0.13),0.03,leather));
     }
+    upper.add(strapBetween(new V3(0,1.3-HY,0.13),new V3(0,1.075-HY,0.158),0.03,leather));
+    if(weaponKey==='mp40'){ // canvas SMG pouches
+      for(const sx of [-1,1]){ const p=sbox(0.075,0.22,0.045,mat(0x8a7f5c,{roughness:1})); p.position.set(sx*0.12,1.0-HY,-0.15); p.rotation.z=sx*0.15; p.castShadow=true; upper.add(p); }
+    } else { // 3-cell leather rifle pouches
+      for(const sx of [-1,1]) for(let c=0;c<3;c++){ const p=sbox(0.04,0.075,0.04,leather); p.position.set(sx*(0.07+c*0.042),1.065-HY,-0.165+c*0.008); p.castShadow=true; upper.add(p); }
+    }
+    const bread=box(0.2,0.15,0.07,canvasM); U(bread,0.12,0.95,0.16);
+    const canteen=scyl(0.05,0.05,0.15,mat(0x3d3a2c),14,true); canteen.scale.z=0.6; U(canteen,0.2,0.93,0.12);
+    const gm=scyl(0.058,0.058,0.27,mat(0x50574a,{roughness:.5,metalness:.4}),14,true); gm.rotation.z=1.25; U(gm,-0.02,1.02,0.2);
+    for(let i=0;i<4;i++){ const rr=scyl(0.061,0.061,0.01,mat(0x434a3e,{metalness:.4})); rr.rotation.z=1.25; U(rr,-0.12+i*0.065,1.06-i*0.021,0.2); }
+    const shovel=sbox(0.13,0.17,0.02,leather); U(shovel,-0.19,0.94,0.1);
+  } else {
+    for(const sx of [-1,1]){
+      const pf=sbox(0.09,0.028,0.012,uniDark); U(pf,sx*0.085,1.41,-0.127);
+      const sb=sbox(0.05,0.014,0.12,mat(0x5a5a3a)); sb.position.set(sx*0.17,1.505-HY,0); sb.rotation.z=-sx*0.2; upper.add(sb);
+    }
+    const pl=sbox(0.03,0.15,0.008,uniDark); U(pl,0,1.45,-0.124);
+    if(weaponKey==='ppsh'){ const dp=scyl(0.09,0.09,0.06,canvasM,16,true); dp.rotation.z=Math.PI/2; U(dp,0.2,1.0,-0.04); }
+    else for(const sx of [-1,1]){ const p=sbox(0.08,0.075,0.045,leather); p.castShadow=true; U(p,sx*0.09,1.065,-0.162); }
+    // rolled greatcoat over the left shoulder
+    const tilt=new THREE.Group(); tilt.position.set(0,1.27-HY,0); tilt.rotation.z=0.62;
+    const roll=new THREE.Mesh(new THREE.TorusGeometry(0.3,0.055,8,24),mat(0x6a6250,{roughness:1}));
+    roll.castShadow=true; roll.rotation.x=Math.PI/2; roll.scale.set(1,0.6,1); tilt.add(roll); upper.add(tilt);
+    // duffle bag on the back
+    const bag=sph(0.13,canvasM,true); bag.scale.set(1,1.1,0.55); U(bag,0,1.22,0.16);
+    const tie=scyl(0.03,0.04,0.05,canvasM); U(tie,0,1.36,0.16);
+    const canteen=scyl(0.05,0.05,0.14,mat(0x4a4a32),14,true); U(canteen,0.2,0.95,0.06);
+    const shovel=sbox(0.13,0.17,0.02,mat(0x5a4a32)); U(shovel,-0.2,0.93,0.06);
   }
 
-  // gear
-  if(sideKey==='soviet'){ // rolled greatcoat across the chest
-    const tilt=new THREE.Group(); tilt.position.set(0,1.3-HY,0); tilt.rotation.z=0.6;
-    const roll=shade(new THREE.Mesh(new THREE.TorusGeometry(0.29,0.055,8,18),mat(0x6d6450)));
-    roll.rotation.x=Math.PI/2; roll.scale.set(1,0.62,1); tilt.add(roll); upper.add(tilt);
-  } else { // gas-mask canister + straps
-    const can=cyl(0.055,0.055,0.26,mat(0x4f5548,{metalness:.4,roughness:.5})); can.rotation.x=0.2; U(can,0.14,1.08,0.2);
-    U(box(0.05,0.5,0.02,leather),0.1,1.33,0.135); U(box(0.05,0.5,0.02,leather),-0.1,1.33,0.135);
-    U(box(0.16,0.1,0.06,leather),-0.15,1.1,-0.15); U(box(0.16,0.1,0.06,leather),0.15,1.1,-0.15);
-  }
-
-  // weapon + arms holding it
+  // ---------- weapon + arms (2-bone IK so elbows bend naturally) ----------
   const w=makeWeapon(weaponKey);
-  w.position.set(0.1,1.28-HY,-0.24); w.rotation.x=-0.22; upper.add(w);
-  const handR=new V3(0,-0.04,0.02).applyEuler(w.rotation).add(w.position);
-  const handL=w.userData.fore.clone().applyEuler(w.rotation).add(w.position);
-  const shR=new V3(0.25,1.5-HY,0), shL=new V3(-0.25,1.5-HY,0);
-  upper.add(limb(shR,handR,0.1,uni), limb(shL,handL,0.1,uni));
-  const hr=box(0.07,0.08,0.09,skin); hr.position.copy(handR); upper.add(hr);
-  const hl=box(0.07,0.08,0.09,skin); hl.position.copy(handL); upper.add(hl);
+  w.position.set(0.07,1.22-HY,-0.19); w.rotation.set(-0.3,0.28,0.05); upper.add(w);
+  const handR=new V3(0,-0.045,0.03).applyEuler(w.rotation).add(w.position);
+  const holdF=w.userData.fore.clone(); holdF.z=Math.max(holdF.z,-0.3);
+  const handL=holdF.applyEuler(w.rotation).add(w.position);
+  const A=0.29, B=0.27;
+  function arm(S,H,pole){
+    const dir=H.clone().sub(S), d0=dir.length(); dir.normalize();
+    const d=Math.min(d0,A+B-0.003);
+    const x=(A*A-B*B+d*d)/(2*d), h=Math.sqrt(Math.max(0,A*A-x*x));
+    const p=pole.clone().sub(dir.clone().multiplyScalar(pole.dot(dir))).normalize();
+    const E=S.clone().add(dir.clone().multiplyScalar(x)).add(p.multiplyScalar(h));
+    const Hr=E.clone().add(H.clone().sub(E).normalize().multiplyScalar(B)); // actual reach
+    upper.add(capBetween(S,E,0.054,uni), capBetween(E,Hr,0.047,uni));
+    const cuff=scyl(0.05,0.05,0.03,uniDark); cuff.position.copy(E.clone().lerp(Hr,0.88)); cuff.quaternion.setFromUnitVectors(UPV,Hr.clone().sub(E).normalize()); upper.add(cuff);
+    const hand=sph(0.04,skin,true); hand.scale.set(0.8,1,1.15); hand.position.copy(Hr); upper.add(hand);
+  }
+  arm(new V3(0.2,1.44-HY,-0.01),handR,new V3(0.7,-1,0.4));
+  arm(new V3(-0.2,1.44-HY,-0.01),handL,new V3(-0.8,-1,0.1));
 
   if(label) root.add(makeLabel(label,'#9be38f'));
-
-  const s={root,upper,legs,side:sideKey,weapon:weaponKey,pos:root.position,vel:new V3(),speed:0,heading:0,
+  const s={root,body,upper,head,legs,side:sideKey,weapon:weaponKey,pos:root.position,vel:new V3(),speed:0,heading:0,
            phase:Math.random()*6,seedT:Math.random()*10,flinch:0,flinchDir:1};
   root.traverse(o=>{ o.userData.soldier=s; });
   return s;
 }
 
 function animateBoxSoldier(s,dt,t){
-  s.phase += dt*s.speed*4.0;
-  const a=Math.min(1,s.speed/1.5);
-  s.legs[0].rotation.x =  Math.sin(s.phase)*0.75*a;
-  s.legs[1].rotation.x = -Math.sin(s.phase)*0.75*a;
-  s.upper.position.y = HY + Math.abs(Math.cos(s.phase))*0.045*a + Math.sin(t*1.8+s.seedT)*0.005;
+  const sp=s.speed;
+  s.phase += dt*sp*(sp>3.4?2.6:3.4);
+  const a=Math.min(1,sp/1.2), run=Math.max(0,Math.min(1,(sp-3)/2.5));
+  const amp=(0.45+0.3*run)*a;
+  s.legs.forEach((L,i)=>{
+    const p=s.phase+(i?Math.PI:0);
+    L.thigh.rotation.x = Math.sin(p)*amp - 0.05*run;
+    L.knee.rotation.x = -(0.04 + Math.max(0,Math.cos(p))*(0.8+0.6*run)*a + 0.12*a);
+  });
+  const breathe=Math.sin(t*1.7+s.seedT)*0.004;
+  s.body.position.y = Math.abs(Math.cos(s.phase))*0.035*a - 0.02*a;
+  s.upper.position.y = HY + breathe;
   s.flinch=Math.max(0,s.flinch-dt*3);
-  s.upper.rotation.x = 0.07*a - s.flinch*0.3;
+  s.upper.rotation.x = 0.04*a + 0.12*run - s.flinch*0.3;
+  s.upper.rotation.y = Math.sin(s.phase)*0.07*a;
   s.upper.rotation.z = s.flinch*0.2*s.flinchDir;
+  // idle: look around a little
+  s.head.rotation.y = (1-a)*Math.sin(t*0.35+s.seedT)*0.45;
+  s.head.rotation.x = (1-a)*Math.sin(t*0.23+s.seedT*2)*0.08;
 }
 
 /* ================= REAL 3D CHARACTER MODELS ================= */
 // To use your own WW2 soldiers: make a folder called "models" next to index.html and put
 //   models/soviet.glb   and   models/german.glb
 // in it (rigged .glb files with "Idle", "Walk" and "Run" animations, made "in place").
-// If they are missing, a free sample soldier is downloaded and tinted to each side's colours.
+// If they are missing, the detailed built-in soldiers below are used.
 const MODEL_CONFIG = {
   soviet: { url:'models/soviet.glb', addHelmet:false, addWeapon:true },
   german: { url:'models/german.glb', addHelmet:false, addWeapon:true },
@@ -520,8 +674,7 @@ async function loadCharacters(){
     const g = location.protocol.startsWith('http') ? await tryLoad(cfg.url) : null;
     if(g){ CHAR[side]={template:g.scene,clips:g.animations,cfg}; }
     else {
-      if(standin===null){ standin=false; for(const u of MODEL_CONFIG.standin.urls){ const r=await tryLoad(u); if(r){ standin=r; break; } } }
-      if(!standin) continue; // fall back to the simple box soldiers
+      continue; // no model file: use the detailed built-in soldiers
       const t=SkeletonUtils.clone(standin.scene), col=MODEL_CONFIG.standin.tint[side];
       t.traverse(o=>{ if(o.isMesh) o.material=Array.isArray(o.material)?o.material.map(m=>tintMaterial(m,col)):tintMaterial(o.material,col); });
       CHAR[side]={template:t,clips:standin.animations,cfg:MODEL_CONFIG.standin};
@@ -700,10 +853,14 @@ function buildViewmodel(side,type){
   const sleeve=mat(S.uniform), skin=mat(0xd6a782,{roughness:.8});
   const f=vmWeapon.userData.fore;
   const rh=new V3(0,-0.045,0.03), lh=f.clone();
-  vmWeapon.add(limb(rh,new V3(0.14,-0.3,0.6),0.08,sleeve));
-  vmWeapon.add(limb(lh,new V3(-0.16,-0.3,lh.z+0.55),0.08,sleeve));
-  const h1=box(0.065,0.075,0.1,skin); h1.position.copy(rh); vmWeapon.add(h1);
-  const h2=box(0.065,0.075,0.1,skin); h2.position.copy(lh); vmWeapon.add(h2);
+  const cuffM=mat(new THREE.Color(S.uniform).multiplyScalar(0.78).getHex());
+  for(const [h,end] of [[rh,new V3(0.15,-0.32,0.62)],[lh,new V3(-0.17,-0.3,lh.z+0.58)]]){
+    const wrist=h.clone().lerp(end,0.12);
+    vmWeapon.add(capBetween(wrist,end,0.045,sleeve,false));
+    const cuff=capBetween(wrist,h.clone().lerp(end,0.2),0.048,cuffM,false); vmWeapon.add(cuff);
+    const hand=sph(0.036,skin,false,14,10); hand.scale.set(0.85,1,1.25); hand.position.copy(h); vmWeapon.add(hand);
+    for(let f=0;f<4;f++){ const fi=cap(0.011,0.03,skin,false); fi.rotation.z=Math.PI/2; fi.position.set(h.x+0.005,h.y-0.03+f*0.0,h.z-0.03+f*0.02); vmWeapon.add(fi); }
+  }
   const fm=new THREE.MeshBasicMaterial({map:flashTex,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
   vmFlash=new THREE.Group();
   const p1=new THREE.Mesh(new THREE.PlaneGeometry(0.22,0.22),fm);
