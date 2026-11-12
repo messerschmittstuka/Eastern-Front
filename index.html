@@ -97,30 +97,35 @@
       '1. Download this HTML file and open it from your computer in <b>Chrome</b> or <b>Edge</b> '+
       '(previews inside chat apps block it).<br>'+
       '2. Check that you are connected to the internet.<br>'+
-      '3. If you are on a school/work network, it may block the download sites (jsdelivr, unpkg, esm.sh). Try another network.';
+      '3. If you are on a school/work network, it may block the download sites (jsdelivr, unpkg). Try another network.';
     e.style.display='flex';
   }
-  // a browser that can't run modules at all
+  // Find a working download site for Three.js, then start the game code.
   window.__started=false;
-  setTimeout(()=>{ if(!window.__started && !window.__loading) showLoadError(); },3000);
+  (async()=>{
+    const BASES=['https://cdn.jsdelivr.net/npm/three@0.160.0/','https://unpkg.com/three@0.160.0/'];
+    let base=null;
+    for(const b of BASES){
+      try{ const r=await fetch(b+'build/three.module.js',{method:'HEAD'}); if(r.ok){ base=b; break; } }catch(e){}
+    }
+    if(!base){ document.getElementById('loading').remove(); showLoadError(); return; }
+    const im=document.createElement('script'); im.type='importmap';
+    im.textContent=JSON.stringify({imports:{'three':base+'build/three.module.js','three/addons/':base+'examples/jsm/'}});
+    document.head.appendChild(im);
+    const g=document.createElement('script'); g.type='module';
+    g.textContent=document.getElementById('gamecode').textContent;
+    g.onerror=()=>showLoadError();
+    document.body.appendChild(g);
+    setTimeout(()=>{ if(!window.__started) showLoadError(); },20000);
+  })();
 </script>
 
-<script type="module">
-window.__loading = true;
-const SOURCES = [
-  'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js',
-  'https://unpkg.com/three@0.160.0/build/three.module.js',
-  'https://esm.sh/three@0.160.0'
-];
-let THREE = null;
-for (const url of SOURCES) {
-  try { THREE = await import(url); break; }
-  catch (e) { console.warn('Three.js failed from', url, e); }
-}
-if (!THREE) { document.getElementById('loading').remove(); showLoadError(); throw new Error('Three.js could not be loaded'); }
+<script type="text/plain" id="gamecode">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 window.__started = true;
 document.getElementById('err').style.display = 'none';
-document.getElementById('loading').remove();
 const V3 = THREE.Vector3;
 const $ = id => document.getElementById(id);
 
@@ -391,7 +396,7 @@ function makeLabel(text,color){
   return s;
 }
 
-function makeSoldier(sideKey,weaponKey,label){
+function makeBoxSoldier(sideKey,weaponKey,label){
   const S=SIDES[sideKey];
   const root=new THREE.Group();
   const uni=mat(S.uniform), pants=mat(S.pants), boots=mat(S.boots,{roughness:.6});
@@ -465,7 +470,7 @@ function makeSoldier(sideKey,weaponKey,label){
   return s;
 }
 
-function animateSoldier(s,dt,t){
+function animateBoxSoldier(s,dt,t){
   s.phase += dt*s.speed*4.0;
   const a=Math.min(1,s.speed/1.5);
   s.legs[0].rotation.x =  Math.sin(s.phase)*0.75*a;
@@ -474,6 +479,135 @@ function animateSoldier(s,dt,t){
   s.flinch=Math.max(0,s.flinch-dt*3);
   s.upper.rotation.x = 0.07*a - s.flinch*0.3;
   s.upper.rotation.z = s.flinch*0.2*s.flinchDir;
+}
+
+/* ================= REAL 3D CHARACTER MODELS ================= */
+// To use your own WW2 soldiers: make a folder called "models" next to index.html and put
+//   models/soviet.glb   and   models/german.glb
+// in it (rigged .glb files with "Idle", "Walk" and "Run" animations, made "in place").
+// If they are missing, a free sample soldier is downloaded and tinted to each side's colours.
+const MODEL_CONFIG = {
+  soviet: { url:'models/soviet.glb', addHelmet:false, addWeapon:true },
+  german: { url:'models/german.glb', addHelmet:false, addWeapon:true },
+  standin:{ urls:['https://threejs.org/examples/models/gltf/Soldier.glb',
+                  'https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/models/gltf/Soldier.glb'],
+            addHelmet:true, addWeapon:true, tint:{ soviet:0xdccd9a, german:0xb2bcaa } }
+};
+const CHAR = {}; // side -> { template, clips, cfg, info }
+
+function findBone(root,patterns){
+  for(const re of patterns){ let f=null; root.traverse(o=>{ if(!f && o.isBone && re.test(o.name)) f=o; }); if(f) return f; }
+  return null;
+}
+function analyseModel(template){
+  template.updateMatrixWorld(true);
+  const bb=new THREE.Box3().setFromObject(template,true);
+  const h=bb.max.y-bb.min.y, scale=h>0.01?1.8/h:1;
+  // which way does the model face? (its left shoulder is on +X when it faces +Z)
+  const left=findBone(template,[/left.?(shoulder|arm)$/i,/(shoulder|upperarm|arm)[_.]?l$/i,/left/i]);
+  let facing=1;
+  if(left){ const p=new V3(); left.getWorldPosition(p); facing = p.x>(bb.min.x+bb.max.x)/2 ? 1 : -1; }
+  return {bb,scale,facing};
+}
+function tintMaterial(m,col){ const n=m.clone(); if(n.color) n.color.multiply(new THREE.Color(col)); return n; }
+
+async function loadCharacters(){
+  const loader=new GLTFLoader();
+  const tryLoad=async url=>{ try{ return await loader.loadAsync(url); }catch(e){ console.warn('Model not loaded:',url); return null; } };
+  let standin=null;
+  for(const side of ['soviet','german']){
+    const cfg=MODEL_CONFIG[side];
+    const g = location.protocol.startsWith('http') ? await tryLoad(cfg.url) : null;
+    if(g){ CHAR[side]={template:g.scene,clips:g.animations,cfg}; }
+    else {
+      if(standin===null){ standin=false; for(const u of MODEL_CONFIG.standin.urls){ const r=await tryLoad(u); if(r){ standin=r; break; } } }
+      if(!standin) continue; // fall back to the simple box soldiers
+      const t=SkeletonUtils.clone(standin.scene), col=MODEL_CONFIG.standin.tint[side];
+      t.traverse(o=>{ if(o.isMesh) o.material=Array.isArray(o.material)?o.material.map(m=>tintMaterial(m,col)):tintMaterial(o.material,col); });
+      CHAR[side]={template:t,clips:standin.animations,cfg:MODEL_CONFIG.standin};
+    }
+    CHAR[side].info=analyseModel(CHAR[side].template);
+  }
+}
+
+function makeHelmet(sideKey){
+  const S=SIDES[sideKey], g=new THREE.Group(), helm=mat(S.helmet,{roughness:.6,metalness:.3});
+  const dome=shade(new THREE.Mesh(new THREE.SphereGeometry(0.15,16,10,0,Math.PI*2,0,Math.PI/2),helm));
+  dome.scale.y = sideKey==='german'?0.85:0.95; g.add(dome);
+  if(sideKey==='german'){
+    const skirt=shade(new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.185,0.08,16,1,true),
+      mat(S.helmet,{roughness:.6,metalness:.3,side:THREE.DoubleSide})));
+    skirt.position.set(0,-0.035,0.01); g.add(skirt);
+  } else { const rim=cyl(0.152,0.165,0.03,helm,16); rim.position.y=-0.005; g.add(rim); }
+  const outer=new THREE.Group(); g.scale.setScalar(1.15); outer.add(g);
+  return outer;
+}
+// attach obj to a bone so it ends up at pos/quat (in the soldier's own space, metres, facing -Z)
+function attachTo(bone,obj,pos,quat,root){
+  root.updateMatrixWorld(true);
+  const m=new THREE.Matrix4().compose(pos,quat,new V3(1,1,1));
+  m.premultiply(new THREE.Matrix4().copy(bone.matrixWorld).invert());
+  m.decompose(obj.position,obj.quaternion,obj.scale);
+  bone.add(obj);
+}
+
+function makeModelSoldier(sideKey,weaponKey,label){
+  const C=CHAR[sideKey], cfg=C.cfg, info=C.info;
+  const root=new THREE.Group(), holder=new THREE.Group(); root.add(holder);
+  holder.rotation.y = info.facing>0 ? Math.PI : 0;
+  const model=SkeletonUtils.clone(C.template);
+  model.scale.setScalar(info.scale);
+  model.position.y = -info.bb.min.y*info.scale;
+  holder.add(model);
+  model.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; o.frustumCulled=false; } });
+
+  if(cfg.addHelmet){
+    const head=findBone(model,[/head$/i,/head/i]);
+    const hp=new V3(0,1.66,0); if(head){ root.updateMatrixWorld(true); const p=new V3(); head.getWorldPosition(p); hp.x=p.x; hp.z=p.z; }
+    const helmet=makeHelmet(sideKey);
+    if(head) attachTo(head,helmet,hp,new THREE.Quaternion(),root); else { helmet.position.copy(hp); root.add(helmet); }
+  }
+  if(cfg.addWeapon){ // weapon slung across the back
+    const spine=findBone(model,[/spine2$/i,/spine1$/i,/chest/i,/spine/i]);
+    const sp=new V3(0,1.35,0); if(spine){ root.updateMatrixWorld(true); spine.getWorldPosition(sp); }
+    const w=makeWeapon(weaponKey);
+    const q=new THREE.Quaternion().setFromAxisAngle(new V3(0,0,1),0.5)
+      .multiply(new THREE.Quaternion().setFromAxisAngle(new V3(1,0,0),Math.PI/2));
+    const pos=new V3(sp.x,sp.y-0.05,sp.z+0.2);
+    if(spine) attachTo(spine,w,pos,q,root); else { w.position.copy(pos); w.quaternion.copy(q); root.add(w); }
+  }
+  if(label) root.add(makeLabel(label,'#9be38f'));
+
+  const mixer=new THREE.AnimationMixer(model);
+  const pick=re=>C.clips.find(c=>re.test(c.name));
+  const clips={ idle:pick(/idle/i)||C.clips.find(c=>!/t.?pose/i.test(c.name)), walk:pick(/walk/i), run:pick(/run|sprint/i) };
+  const acts={}, w={};
+  for(const k in clips){ if(!clips[k]) continue;
+    const a=mixer.clipAction(clips[k]); a.play(); a.time=Math.random()*clips[k].duration;
+    w[k]=k==='idle'?1:0; a.setEffectiveWeight(w[k]); acts[k]=a; }
+
+  const s={root,holder,mixer,acts,w,side:sideKey,weapon:weaponKey,pos:root.position,vel:new V3(),speed:0,heading:0,
+           flinch:0,flinchDir:1};
+  root.traverse(o=>{ o.userData.soldier=s; });
+  return s;
+}
+
+function makeSoldier(sideKey,weaponKey,label){
+  return CHAR[sideKey] ? makeModelSoldier(sideKey,weaponKey,label) : makeBoxSoldier(sideKey,weaponKey,label);
+}
+function animateSoldier(s,dt,t){
+  if(!s.mixer){ animateBoxSoldier(s,dt,t); return; }
+  const sp=s.speed, A=s.acts;
+  const tw={idle:sp<0.3?1:0, walk:sp>=0.3&&sp<3.4?1:0, run:sp>=3.4?1:0};
+  if(!A.run){ tw.walk+=tw.run; tw.run=0; }
+  if(!A.walk){ tw.idle+=tw.walk; tw.walk=0; }
+  for(const k in A){ s.w[k]+=(tw[k]-s.w[k])*Math.min(1,dt*8); A[k].setEffectiveWeight(s.w[k]); }
+  if(A.walk) A.walk.setEffectiveTimeScale(Math.max(0.6,Math.min(1.8,sp/1.6)));
+  if(A.run)  A.run.setEffectiveTimeScale(Math.max(0.7,Math.min(1.4,sp/5.5)));
+  s.mixer.update(dt);
+  s.flinch=Math.max(0,s.flinch-dt*3);
+  s.holder.rotation.x=-s.flinch*0.2;
+  s.holder.rotation.z=s.flinch*0.12*s.flinchDir;
 }
 
 /* ================= SQUADS ================= */
@@ -756,6 +890,10 @@ document.querySelectorAll('.card').forEach(c=>c.onclick=()=>{
   renderWeaponButtons(); spawnWorld(selSide,selWeapon,true);
 });
 renderWeaponButtons();
+spawnWorld(selSide,selWeapon,true);
+$('deploy').disabled=true; $('loading').textContent='Loading soldiers…';
+await loadCharacters();
+$('loading').remove(); $('deploy').disabled=false;
 spawnWorld(selSide,selWeapon,true);
 
 // crosshair (spreads with movement)
