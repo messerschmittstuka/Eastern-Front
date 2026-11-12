@@ -74,7 +74,7 @@
   <button id="deploy" class="big">DEPLOY</button>
   <div class="controls">
     WASD move · Mouse look · Shift sprint · Space jump · C crouch (hold)<br>
-    Left click fire · Right click aim · R reload · Arrow keys also turn · Esc pause
+    Left click fire · Right click / Q aim · G grenade · R reload · Arrow keys also turn · Esc pause
   </div>
 </div>
 
@@ -1103,8 +1103,8 @@ const holes=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),
 holes.count=0; holes.frustumCulled=false; holes.renderOrder=1; scene.add(holes);
 let holeIdx=0;
 const _hm=new THREE.Matrix4(), _hq=new THREE.Quaternion(), _hq2=new THREE.Quaternion(), ZV=new V3(0,0,1);
-function addBulletHole(p,n,ground){
-  const size=(ground?0.07:0.09)*(0.8+Math.random()*0.5);
+function addBulletHole(p,n,ground,big){
+  const size=big || (ground?0.07:0.09)*(0.8+Math.random()*0.5);
   _hq.setFromUnitVectors(ZV,n); _hq2.setFromAxisAngle(ZV,Math.random()*6.28); _hq.multiply(_hq2);
   _hm.compose(p.clone().addScaledVector(n,0.012),_hq,new V3(size,size,size));
   holes.setMatrixAt(holeIdx,_hm); holes.instanceMatrix.needsUpdate=true;
@@ -1115,6 +1115,96 @@ function bulletImpact(tr){
   if(tr.soldier){ spawnPuff(tr.point,0xcfc8bb,0.6); return; }
   spawnPuff(tr.point,tr.ground?0xffffff:0x8a7e70,tr.ground?0.9:0.6);
   addBulletHole(tr.point,tr.normal,tr.ground);
+}
+
+/* ================= GRENADES ================= */
+const grenades=[]; let grenadesLeft=3, throwT=0, throwCD=0, shakeT=0, boomT=0;
+const boomLight=new THREE.PointLight(0xffa050,0,26); scene.add(boomLight);
+function makeGrenadeMesh(side){
+  const g=new THREE.Group();
+  if(side==='german'){ // stick grenade
+    const head=cyl(0.035,0.035,0.075,mat(0x4d5446,{metalness:.4,roughness:.6}),12); head.position.y=0.13; g.add(head);
+    const cap2=cyl(0.03,0.035,0.012,mat(0x3a4036,{metalness:.4}),12); cap2.position.y=0.172; g.add(cap2);
+    const handle=cyl(0.014,0.014,0.26,mat(0x7a5a36,{roughness:.8}),8); g.add(handle);
+  } else { // F-1 "pineapple"
+    const body=new THREE.Mesh(new THREE.SphereGeometry(0.043,12,10),mat(0x4b5a36,{roughness:.7,metalness:.2})); body.scale.y=1.25; shade(body); g.add(body);
+    for(let i=0;i<3;i++){ const r=cyl(0.046-Math.abs(i-1)*0.008,0.046-Math.abs(i-1)*0.008,0.006,mat(0x3a4628),12); r.position.y=(i-1)*0.025; g.add(r); }
+    const fuse=cyl(0.012,0.012,0.03,mat(0x8a8a80,{metalness:.7}),8); fuse.position.y=0.064; g.add(fuse);
+    const lever=box(0.012,0.07,0.008,mat(0x8a8a80,{metalness:.7})); lever.position.set(0.02,0.04,0); lever.rotation.z=-0.3; g.add(lever);
+  }
+  g.traverse(o=>{ o.raycast=()=>{}; });
+  return g;
+}
+function throwGrenade(){
+  if(throwCD>0 || gun.reloading>0 || throwT>0) return;
+  if(grenadesLeft<=0){ showMsg('NO GRENADES LEFT',1); return; }
+  grenadesLeft--; throwCD=1.1; throwT=0.55;
+  const dir=new V3(); camera.getWorldDirection(dir);
+  const m=makeGrenadeMesh(selSide);
+  m.position.copy(camera.position).addScaledVector(dir,0.5).add(new V3(0,-0.12,0));
+  if(blocked(new V3(m.position.x,m.position.y-0.06,m.position.z),0.06,0.12)) m.position.copy(camera.position);
+  scene.add(m);
+  const vel=dir.clone().multiplyScalar(15.5).add(new V3(0,3.2,0)).add(new V3(player.vel.x,0,player.vel.z).multiplyScalar(0.5));
+  grenades.push({m,pos:m.position,vel,fuse:2.6,spin:new V3(Math.random()*12-6,Math.random()*6,Math.random()*12-6),owner:'player'});
+  sndClick(0,900,0.3); noise(0.18,1400,0.12,'bandpass',null,0.05);
+}
+const _gq=new V3();
+function updateGrenades(dt){
+  for(let i=grenades.length-1;i>=0;i--){
+    const g=grenades[i], p=g.pos, v=g.vel;
+    g.fuse-=dt; v.y-=14*dt;
+    for(const ax of ['x','y','z']){
+      p[ax]+=v[ax]*dt;
+      _gq.set(p.x,p.y-0.06,p.z);
+      let hit=false;
+      for(const c of colliders){ if(!c.noBullet && overlaps(_gq,0.06,0.12,c)){ hit=true; break; } }
+      if(hit){
+        p[ax]-=v[ax]*dt;
+        if(Math.abs(v[ax])>2.5) noise(0.05,2500,0.08*Math.min(1,10/(p.distanceTo(camera.position)+1)),'bandpass');
+        v[ax]*=-0.35; for(const o of ['x','y','z']) if(o!==ax) v[o]*=0.75;
+      }
+    }
+    if(p.y<0.06){ p.y=0.06; if(Math.abs(v.y)>2.5) noise(0.05,900,0.06,'bandpass'); v.y*=-0.3; v.x*=0.7; v.z*=0.7; }
+    const spd=v.length();
+    g.m.rotation.x+=g.spin.x*dt*Math.min(1,spd/3); g.m.rotation.z+=g.spin.z*dt*Math.min(1,spd/3);
+    if(g.fuse<=0){ scene.remove(g.m); grenades.splice(i,1); explode(p.clone(),g.owner); }
+  }
+  throwCD=Math.max(0,throwCD-dt); throwT=Math.max(0,throwT-dt);
+  if(boomT>0){ boomT-=dt; boomLight.intensity=Math.max(0,boomT/0.3)*140; } else boomLight.intensity=0;
+}
+function explosionBlocked(a,b){
+  const dir=b.clone().sub(a), d=dir.length(); dir.divideScalar(d);
+  _bray.set(a,dir);
+  for(const c of colliders){ if(c.noBullet) continue; if(_bray.intersectBox(c,_bp) && _bp.distanceTo(a)<d-0.35 && _bp.distanceTo(a)>0.1) return true; }
+  return false;
+}
+function explode(p,owner){
+  const up=new V3(0,1,0);
+  // fireball, smoke, snow/dirt thrown up
+  spawnPuff(p.clone().add(new V3(0,0.6,0)),0xffb060,5,0.32,true,0);
+  spawnPuff(p.clone().add(new V3(0,0.4,0)),0xfff0c0,3,0.15,true,0);
+  for(let i=0;i<9;i++) spawnPuff(p.clone().add(new V3((Math.random()-.5)*2.4,0.4+Math.random()*1.8,(Math.random()-.5)*2.4)),0x3a3734,3.5+Math.random()*3,2+Math.random()*1.5,false,0.6);
+  for(let i=0;i<10;i++) spawnPuff(p.clone().add(new V3((Math.random()-.5)*1.5,Math.random()*0.6,(Math.random()-.5)*1.5)),Math.random()<.5?0xffffff:0x6a5c4c,1.2+Math.random(),0.9,false,2.5+Math.random()*2);
+  boomLight.position.copy(p).add(new V3(0,1,0)); boomT=0.3;
+  addBulletHole(new V3(p.x,Math.max(0,p.y-0.06),p.z),up,true,2.4);
+  const cd=p.distanceTo(camera.position), vol=Math.min(1,14/(cd+4));
+  noise(1.5,1100*(0.4+vol*0.6),1.0*vol,'lowpass',60); tone(75,28,0.7,0.9*vol); noise(0.3,4000,0.25*vol,'highpass');
+  shakeT=Math.max(shakeT,Math.max(0,1-cd/30));
+  // damage everyone in range who isn't shielded by cover
+  const centre=p.clone().add(new V3(0,0.3,0));
+  const dmgAt=d=> d<3 ? 130 : Math.max(0,130*(1-(d-3)/4));
+  if(!playerDead){
+    const chest=player.pos.clone().add(new V3(0,1.0,0)), d=centre.distanceTo(chest);
+    if(d<7 && !explosionBlocked(centre,chest)) damagePlayer(dmgAt(d),p);
+  }
+  for(const s of [...mates,...enemies]){
+    if(s.dead) continue;
+    const chest=s.pos.clone().add(new V3(0,1.0,0)), d=centre.distanceTo(chest);
+    if(d>=7 || explosionBlocked(centre,chest)) continue;
+    const killed=damageSoldier(s,dmgAt(d),owner==='player'?playerTarget:null);
+    if(killed && owner==='player' && s.team==='enemy'){ kills++; showMsg('GRENADE KILL!',1.2); }
+  }
+  alertByGunshot(p);
 }
 
 /* ================= COMBAT AI ================= */
@@ -1243,7 +1333,7 @@ function playerDies(){
 function respawnPlayer(){
   playerDead=false; playerHP=100; hurtT=0; lastHurt=99;
   Object.assign(player,{pos:SPAWN.clone(),vel:new V3(),yaw:0,pitch:0,crouch:false});
-  const W=WEAPONS[gun.type]; gun.ammo=W.mag; gun.reserve=Math.max(gun.reserve,W.reserve); gun.reloading=0;
+  const W=WEAPONS[gun.type]; gun.ammo=W.mag; gun.reserve=Math.max(gun.reserve,W.reserve); gun.reloading=0; grenadesLeft=3;
   $('dead').style.display='none';
   // push enemies that were camping the spawn back up the street
   for(const e of enemies) if(!e.dead && e.pos.z>18){ e.pos.z=-20-Math.random()*20; e.ai.state='hunt'; }
@@ -1317,6 +1407,10 @@ function updateAI(s,dt,slot){
     if(s.wait>0){ s.wait-=dt; }
     else { if(Math.hypot(tg.x-s.pos.x,tg.z-s.pos.z)<0.6){ s.goingB=!s.goingB; s.wait=1.5+Math.random()*2.5; } mx=tg.x; mz=tg.z; spd=1.3; }
   }
+  for(const g of grenades){
+    const gx=s.pos.x-g.pos.x, gz=s.pos.z-g.pos.z, gd=Math.hypot(gx,gz);
+    if(gd<6.5 && g.fuse<2.3 && Math.abs(g.vel.x)+Math.abs(g.vel.z)<6){ mx=s.pos.x+gx/(gd||1)*7; mz=s.pos.z+gz/(gd||1)*7; spd=5.5; faceT=null; break; }
+  }
   moveSoldierToward(s,mx,mz,spd,dt,slot&&!faceT?player.yaw:undefined);
   if(faceT) faceToward(s,faceT.x,faceT.z,dt);
   // aim the gun arm at the target
@@ -1347,6 +1441,7 @@ function animateDead(s,dt){
 }
 
 function updateCombat(dt,t){
+  updateGrenades(dt);
   const slots=mates.map((m,i)=>{ const o=FORM[i%FORM.length]; return new V3(player.pos.x+o.x*Math.cos(player.yaw)+o.z*Math.sin(player.yaw),0,player.pos.z-o.x*Math.sin(player.yaw)+o.z*Math.cos(player.yaw)); });
   mates.forEach((m,i)=>{ if(m.dead) animateDead(m,dt); else { updateAI(m,dt,slots[i]); animateSoldier(m,dt,t); } });
   for(const e of enemies){ if(e.dead) animateDead(e,dt); else { updateAI(e,dt,null); animateSoldier(e,dt,t); } }
@@ -1356,7 +1451,7 @@ function updateCombat(dt,t){
   for(let i=tracers.length-1;i>=0;i--){ tracers[i].t-=dt; if(tracers[i].t<=0){ scene.remove(tracers[i].ln); tracers[i].ln.geometry.dispose(); tracers.splice(i,1); } }
   // waves
   const alive=enemies.filter(e=>!e.dead).length;
-  if(alive===0 && waveTimer<=0 && !playerDead){ waveTimer=7; playerHP=100; showMsg('AREA CLEAR! HEALTH RESTORED · NEXT WAVE INCOMING…',3); }
+  if(alive===0 && waveTimer<=0 && !playerDead){ waveTimer=7; playerHP=100; grenadesLeft=3; showMsg('AREA CLEAR! HEALTH & GRENADES RESTORED · NEXT WAVE INCOMING…',3); }
   if(waveTimer>0){ waveTimer-=dt; if(waveTimer<=0){ wave++; spawnWave(); } }
   // player health regen + HUD
   lastHurt+=dt;
@@ -1410,15 +1505,16 @@ const puffTex=canvasTex(64,(x,s)=>{
   x.fillStyle=g; x.fillRect(0,0,s,s);
 });
 const puffs=[];
-function spawnPuff(p,color,size){
-  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:puffTex,color,transparent:true,depthWrite:false,opacity:.9}));
+function spawnPuff(p,color,size,life=0.7,additive=false,rise=0.3){
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:puffTex,color,transparent:true,depthWrite:false,opacity:.9,
+    blending:additive?THREE.AdditiveBlending:THREE.NormalBlending}));
   s.position.copy(p); s.scale.setScalar(size*.3); scene.add(s);
-  puffs.push({s,life:0,max:0.7,size});
+  puffs.push({s,life:0,max:life,size,rise});
 }
 function updatePuffs(dt){
   for(let i=puffs.length-1;i>=0;i--){
     const p=puffs[i]; p.life+=dt; const k=p.life/p.max;
-    p.s.scale.setScalar(p.size*(0.3+k)); p.s.material.opacity=0.9*(1-k); p.s.position.y+=dt*0.3;
+    p.s.scale.setScalar(p.size*(0.3+k)); p.s.material.opacity=0.9*(1-k); p.s.position.y+=dt*(p.rise??0.3);
     if(k>=1){ scene.remove(p.s); p.s.material.dispose(); puffs.splice(i,1); }
   }
 }
@@ -1461,6 +1557,7 @@ addEventListener('keydown',e=>{
   if(state!=='playing') return;
   if(e.code==='Space'){ jumpQueued=true; e.preventDefault(); }
   if(e.code==='KeyR') startReload();
+  if(e.code==='KeyG') throwGrenade();
 });
 addEventListener('keyup',e=>{ keys[e.code]=false; });
 addEventListener('blur',()=>{ for(const k in keys) keys[k]=false; mouseDown=rmb=false; });
@@ -1483,7 +1580,7 @@ addEventListener('mousemove',e=>{
 const ray=new THREE.Raycaster();
 function fire(){
   const W=WEAPONS[gun.type];
-  if(gun.reloading>0 || gun.cooldown>0 || gun.sprintT>0.5) return;
+  if(gun.reloading>0 || gun.cooldown>0 || gun.sprintT>0.5 || throwT>0) return;
   if(gun.ammo<=0){ sndClick(0,1500,0.3); gun.cooldown=0.25; if(gun.reserve>0) startReload(); return; }
   gun.ammo--; gun.cooldown=W.rate; if(W.bolt) gun.bolt=W.rate;
   const r=W.recoil*(1-gun.ads*0.5)*(player.crouch?0.7:1);
@@ -1521,7 +1618,9 @@ function startGame(){
   const W=WEAPONS[selWeapon];
   Object.assign(gun,{type:selWeapon,ammo:W.mag,reserve:W.reserve,cooldown:0,reloading:0,bolt:0,ads:0,kick:0,flash:0,sprintT:0});
   buildViewmodel(selSide,selWeapon);
-  wave=1; kills=0; waveTimer=0; playerHP=100; hurtT=0; lastHurt=99; playerDead=false; $('dead').style.display='none';
+  wave=1; kills=0; waveTimer=0; grenadesLeft=3; throwT=0; throwCD=0; shakeT=0;
+  for(const g of grenades) scene.remove(g.m); grenades.length=0;
+  playerHP=100; hurtT=0; lastHurt=99; playerDead=false; $('dead').style.display='none';
   $('menu').style.display='none'; $('hud').style.display='block';
   $('side').textContent=SIDES[selSide].title+' · '+W.name;
   $('side').style.color=SIDES[selSide].color;
@@ -1638,8 +1737,13 @@ function updatePlayer(dt){
   if(wantCrouch) P.crouch=true;
   else if(P.crouch && !blocked(P.pos,P.R,STAND_H)) P.crouch=false;
 
-  const sprinting = keys.ShiftLeft && f>0 && !P.crouch && P.stamina>0.02 && gun.reloading<=0 && !rmb;
-  P.stamina = sprinting && Math.hypot(P.vel.x,P.vel.z)>1 ? Math.max(0,P.stamina-dt*0.22) : Math.min(1,P.stamina+dt*0.15);
+  // sprint with EITHER Shift key; running drains stamina, running out makes you tired until it refills to 30%
+  const shiftDown = keys.ShiftLeft || keys.ShiftRight;
+  if(P.stamina<=0) P.tired=true; else if(P.stamina>0.3) P.tired=false;
+  const sprinting = shiftDown && (f!==0||s!==0) && !P.crouch && !P.tired && gun.reloading<=0 && !rmb && !keys.KeyQ && throwT<=0;
+  const movingFast = Math.hypot(P.vel.x,P.vel.z)>1;
+  if(sprinting && movingFast) P.stamina=Math.max(0,P.stamina-dt*0.25);   // about 4 seconds of running
+  else P.stamina=Math.min(1,P.stamina+dt*(movingFast?0.12:0.2));          // refills faster when standing still
   gun.sprintT += ((sprinting?1:0)-gun.sprintT)*Math.min(1,dt*8);
 
   const maxSpd = P.crouch?2.1 : sprinting?7.2 : gun.ads>0.5?2.8 : 4.6;
@@ -1682,6 +1786,8 @@ function updatePlayer(dt){
 
   camera.position.set(P.pos.x+Math.cos(P.yaw)*bobX, P.pos.y+P.eye+bobY-P.landDip+(P.stepOff||0), P.pos.z-Math.sin(P.yaw)*bobX);
   camera.rotation.set(P.pitch,P.yaw,0);
+  if(shakeT>0){ shakeT=Math.max(0,shakeT-dt*2.2); const k=shakeT*shakeT;
+    camera.position.x+=(Math.random()-.5)*k*0.3; camera.position.y+=(Math.random()-.5)*k*0.3; camera.rotation.z=(Math.random()-.5)*k*0.06; }
 
   // ===== weapon state =====
   gun.cooldown=Math.max(0,gun.cooldown-dt);
@@ -1691,7 +1797,7 @@ function updatePlayer(dt){
     if(gun.reloading<=0){ const take=Math.min(W.mag-gun.ammo,gun.reserve); gun.ammo+=take; gun.reserve-=take; gun.reloading=0; }
   }
   gun.bolt=Math.max(0,gun.bolt-dt);
-  const adsWant = rmb && gun.sprintT<0.3 && gun.reloading<=0 ? 1 : 0;
+  const adsWant = (rmb||keys.KeyQ) && throwT<=0 && gun.sprintT<0.3 && gun.reloading<=0 ? 1 : 0;
   gun.ads += (adsWant-gun.ads)*Math.min(1,dt*12);
   gun.kick += (0-gun.kick)*Math.min(1,dt*(W.heavy?9:18));
   gun.swayX*=Math.exp(-dt*8); gun.swayY*=Math.exp(-dt*8);
@@ -1705,13 +1811,14 @@ function updatePlayer(dt){
   const p=hip.lerp(ads,gun.ads);
   const reloadK = gun.reloading>0 ? Math.sin(Math.min(1,(W.reload-gun.reloading)/W.reload)*Math.PI) : 0;
   const boltK = gun.bolt>0 ? Math.sin(Math.min(1,Math.max(0,(W.rate-gun.bolt-0.25)/(W.rate-0.35)))*Math.PI) : 0;
+  const throwK = throwT>0 ? Math.sin((1-throwT/0.55)*Math.PI) : 0;
   vmRoot.position.set(
-    p.x + bobX*0.6 - gun.swayX + gun.sprintT*0.04,
-    p.y + bobY*0.5 + gun.swayY - reloadK*0.12 - gun.sprintT*0.05,
+    p.x + bobX*0.6 - gun.swayX + gun.sprintT*0.04 + throwK*0.1,
+    p.y + bobY*0.5 + gun.swayY - reloadK*0.12 - gun.sprintT*0.05 - throwK*0.35,
     p.z + gun.kick*(W.heavy?0.09:0.035)
   );
   vmRoot.rotation.set(
-    gun.kick*(W.heavy?0.12:0.04) - reloadK*0.5 - gun.sprintT*0.3,
+    gun.kick*(W.heavy?0.12:0.04) - reloadK*0.5 - gun.sprintT*0.3 - throwK*0.7,
     gun.sprintT*0.7 - gun.swayX*2,
     reloadK*0.6 + boltK*0.35 + gun.sprintT*0.2
   );
@@ -1726,8 +1833,9 @@ function updatePlayer(dt){
 
   // HUD
   $('ammoN').textContent=`${gun.ammo} / ${gun.reserve}`;
-  $('ammoW').textContent=W.name;
+  $('ammoW').textContent=W.name+'  ·  GRENADES '+grenadesLeft;
   $('stam').style.width=(P.stamina*100)+'%';
+  $('stam').style.background=P.tired?'#d0603c':'#d8d0b8';
   $('reloadTxt').style.opacity=gun.reloading>0?1:0;
   const gap=6+hs*2.2*(1-gun.ads)+gun.kick*10+(P.onGround?0:14);
   updateCrosshair(gap,(1-gun.ads)*(1-gun.sprintT));
