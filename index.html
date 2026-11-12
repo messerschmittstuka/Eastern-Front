@@ -57,7 +57,9 @@
   #mapdone{position:absolute;top:30%;width:100%;text-align:center;text-shadow:0 3px 6px #000;opacity:0;transition:opacity .6s;color:#f0e6c8}
   #protect{position:absolute;top:14%;width:100%;text-align:center;font-size:17px;letter-spacing:2px;color:#9fe0ff;text-shadow:0 2px 4px #000;opacity:0;transition:opacity .3s}
   /* ---------- mobile ---------- */
-  html,body{touch-action:none;-webkit-user-select:none;-webkit-touch-callout:none}
+  *{touch-action:manipulation}
+  html,body,canvas,#touchUI,#touchUI *{touch-action:none}
+  html,body{-webkit-user-select:none;-webkit-touch-callout:none}
   #touchUI{position:fixed;inset:0;z-index:6;display:none;--u:min(1vh,0.55vw)}
   #lookZone{position:absolute;top:0;bottom:0;right:0;width:58%}
   #leftZone{position:absolute;top:32%;bottom:0;left:0;width:42%}
@@ -138,7 +140,7 @@
   <button id="deleteSave" style="display:none;margin-top:8px;background:none;border:none;color:#a99;cursor:pointer;font:13px 'Courier New'">delete saved game</button>
   <div class="controls">
     WASD move · Mouse look · Shift sprint · Space jump · C crouch (toggle)<br>
-    Left click fire · Right click / Q aim · G grenade · R reload · Arrow keys also turn · Esc pause
+    Left click fire · Right click / Q aim · G grenade · R reload · M music · Arrow keys also turn · Esc pause
   </div>
 </div>
 
@@ -146,6 +148,7 @@
   <h2>PAUSED</h2>
   <button id="resume" class="big">CLICK TO PLAY</button>
   <button id="saveBtn" class="big">SAVE GAME</button>
+  <button id="musicBtn" class="big">MUSIC: ON</button>
   <button id="toMenu" class="big">MAIN MENU</button>
 </div>
 
@@ -188,6 +191,14 @@
 <div id="loading" style="position:fixed;bottom:12px;left:0;right:0;text-align:center;z-index:20;opacity:.7">Loading 3D engine…</div>
 
 <script>
+  // stop phones from zooming the page (double-tap zoom / pinch zoom)
+  (function(){
+    let lastTouch=0;
+    document.addEventListener('touchend',e=>{ const now=Date.now(); if(now-lastTouch<350) e.preventDefault(); lastTouch=now; },{passive:false});
+    document.addEventListener('dblclick',e=>e.preventDefault(),{passive:false});
+    for(const ev of ['gesturestart','gesturechange','gestureend']) document.addEventListener(ev,e=>e.preventDefault(),{passive:false});
+    document.addEventListener('touchmove',e=>{ if(e.touches.length>1) e.preventDefault(); },{passive:false});
+  })();
   function showLoadError(){
     const e=document.getElementById('err');
     e.innerHTML='Could not load the 3D engine (Three.js).<br><br>'+
@@ -1610,6 +1621,7 @@ function damagePlayer(dmg,from){
 }
 function playerDies(){
   playerDead=true; state='dead'; mouseDown=rmb=false;
+  sting('death'); musicStop(2);
   $('dead').style.display='flex';
   if(checkpoint){
     $('deadInfo').innerHTML=`You reached ${MAPS[currentMap].short} wave ${wave} with ${kills} kills.<br>You will respawn at your checkpoint: <b>${MAPS[checkpoint.map].short} · WAVE ${checkpoint.wave}</b>.`;
@@ -1640,7 +1652,8 @@ let checkpoint=null; // {map, wave, kills, reserve}
 const CHECKPOINT_WAVE=3;
 function spawnWave(){
   startProtection();
-  if(wave===CHECKPOINT_WAVE){ checkpoint={map:currentMap,wave,kills,reserve:gun.reserve}; setTimeout(()=>showMsg(`CHECKPOINT REACHED · ${MAPS[currentMap].short} WAVE ${wave}`,3),3200); }
+  sting('waveStart');
+  if(wave===CHECKPOINT_WAVE){ checkpoint={map:currentMap,wave,kills,reserve:gun.reserve}; setTimeout(()=>sting('checkpoint'),3200); setTimeout(()=>showMsg(`CHECKPOINT REACHED · ${MAPS[currentMap].short} WAVE ${wave}`,3),3200); }
   const enemySide = selSide==='soviet'?'german':'soviet', E=SIDES[enemySide];
   const n=Math.min(16,4+wave*2+MAP_ORDER.indexOf(currentMap)*2);
   for(let i=0;i<n;i++){
@@ -1741,6 +1754,8 @@ function animateDead(s,dt){
 }
 
 function updateCombat(dt,t){
+  { let fight=0; for(const e of enemies){ if(!e.dead && e.ai && e.ai.state==='combat' && Math.hypot(e.pos.x-player.pos.x,e.pos.z-player.pos.z)<70){ fight++; } }
+    musicSetIntensity(playerDead?0:Math.min(1,fight/3 + (lastHurt<4?0.4:0))); musicUpdate(dt); }
   if(protectT>0 && state==='playing'){ protectT=Math.max(0,protectT-dt); }
   const pe=$('protect');
   if(protectT>0){ pe.style.opacity=1; pe.textContent=`🛡 WAVE START PROTECTION · ${Math.ceil(protectT)}  (no one can be hurt)`; }
@@ -1760,8 +1775,8 @@ function updateCombat(dt,t){
     const W=WEAPONS[gun.type], bonus=W.mag*2;
     gun.reserve=Math.max(gun.reserve,W.reserve)+bonus;                    // refill + bonus ammo
     const next=MAP_ORDER[MAP_ORDER.indexOf(currentMap)+1];
-    if(wave>=WAVES_PER_MAP && next){ mapDoneT=7; showMapDone(next); }
-    else { waveTimer=7; showMsg(`WAVE ${wave} CLEARED! +${bonus} AMMO · HEALTH & GRENADES RESTORED`,3.5);
+    if(wave>=WAVES_PER_MAP && next){ mapDoneT=7; showMapDone(next); sting('victory'); }
+    else { waveTimer=7; sting('clear'); showMsg(`WAVE ${wave} CLEARED! +${bonus} AMMO · HEALTH & GRENADES RESTORED`,3.5);
       if(wave===WAVES_PER_MAP && !next) setTimeout(()=>showMsg('MORE MAPS COMING SOON · THE WAVES KEEP COMING',3.5),3600); }
   }
   if(mapDoneT>0){ mapDoneT-=dt; if(mapDoneT<=0) goToMap(MAP_ORDER[MAP_ORDER.indexOf(currentMap)+1]); }
@@ -1894,6 +1909,152 @@ const sndLand=()=>play(SB.land,0.5);
 // keep the audio engine awake (browsers can suspend it)
 addEventListener('mousedown',()=>{ if(actx && actx.state!=='running') actx.resume(); });
 addEventListener('keydown',()=>{ if(actx && actx.state!=='running') actx.resume(); });
+
+/* ================= MUSIC (composed in code: epic war orchestra, D minor) ================= */
+const MUS={on:true,bus:null,layers:{},target:0,int:0,step:0,nextT:0,timer:null,playing:false};
+try{ MUS.on = localStorage.getItem('ef_music')!=='off'; }catch(e){}
+const mf=m=>440*Math.pow(2,(m-69)/12);
+const BPM=96, STEP=60/BPM/4;           // 16th notes
+const CHORDS=[ {n:[50,53,57],b:38}, {n:[46,50,53],b:34}, {n:[43,46,50],b:31}, {n:[45,49,52],b:33} ]; // Dm Bb Gm A
+const MELODY=[ [[62,8],[65,4],[64,4],[62,16]], [[62,8],[58,8],[60,8],[62,8]], [[58,8],[62,8],[67,16]], [[64,8],[61,8],[57,16]] ];
+function musInit(){
+  if(MUS.bus || !actx) return;
+  MUS.bus=actx.createGain(); MUS.bus.gain.value=0;
+  // concert-hall reverb made from decaying noise
+  const len=actx.sampleRate*2.8, ir=actx.createBuffer(2,len,actx.sampleRate);
+  for(let c=0;c<2;c++){ const d=ir.getChannelData(c); for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.6); }
+  const rev=actx.createConvolver(); rev.buffer=ir; const revG=actx.createGain(); revG.gain.value=0.42;
+  MUS.bus.connect(master); MUS.bus.connect(rev); rev.connect(revG); revG.connect(master);
+  for(const k of ['pad','ost','drum','brass']){ const g=actx.createGain(); g.gain.value=0; g.connect(MUS.bus); MUS.layers[k]=g; }
+  // stings play on their own channel so they still sound when the battle music fades out
+  const sg=actx.createGain(); sg.gain.value=0.6; sg.connect(master); sg.connect(rev); MUS.layers.sting=sg;
+}
+// ---- instruments ----
+function strings(dest,m,t,dur,vol,cut=900,att=0.7){
+  const g=actx.createGain(), f=actx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=cut; f.Q.value=0.7;
+  g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+att); g.gain.setValueAtTime(vol,t+Math.max(att,dur-0.8)); g.gain.linearRampToValueAtTime(0,t+dur+0.6);
+  f.connect(g); g.connect(dest);
+  for(const det of [-8,0,7]){ const o=actx.createOscillator(); o.type='sawtooth'; o.frequency.value=mf(m); o.detune.value=det; o.connect(f); o.start(t); o.stop(t+dur+0.7); }
+}
+function ostinato(dest,m,t,vol){
+  const o=actx.createOscillator(), f=actx.createBiquadFilter(), g=actx.createGain();
+  o.type='sawtooth'; o.frequency.value=mf(m); f.type='lowpass'; f.frequency.setValueAtTime(1800,t); f.frequency.exponentialRampToValueAtTime(500,t+0.12);
+  g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.14);
+  o.connect(f); f.connect(g); g.connect(dest); o.start(t); o.stop(t+0.16);
+}
+function taiko(dest,t,vol,pitch=70){
+  const o=actx.createOscillator(), g=actx.createGain(); o.type='sine';
+  o.frequency.setValueAtTime(pitch*1.6,t); o.frequency.exponentialRampToValueAtTime(pitch*0.55,t+0.35);
+  g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.6);
+  o.connect(g); g.connect(dest); o.start(t); o.stop(t+0.65);
+  const n=actx.createBufferSource(); n.buffer=noiseBuf; const nf=actx.createBiquadFilter(); nf.type='lowpass'; nf.frequency.value=700;
+  const ng=actx.createGain(); ng.gain.setValueAtTime(vol*0.5,t); ng.gain.exponentialRampToValueAtTime(0.001,t+0.12);
+  n.connect(nf); nf.connect(ng); ng.connect(dest); n.start(t); n.stop(t+0.15);
+}
+function snare(dest,t,vol){
+  const n=actx.createBufferSource(); n.buffer=noiseBuf; const f=actx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=2200; f.Q.value=0.8;
+  const g=actx.createGain(); g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.09);
+  n.connect(f); f.connect(g); g.connect(dest); n.start(t,Math.random()*0.3); n.stop(t+0.1);
+}
+function cymbal(dest,t,vol,dur=2.5){
+  const n=actx.createBufferSource(); n.buffer=noiseBuf; n.loop=true; const f=actx.createBiquadFilter(); f.type='highpass'; f.frequency.value=5000;
+  const g=actx.createGain(); g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  n.connect(f); f.connect(g); g.connect(dest); n.start(t); n.stop(t+dur);
+}
+function brass(dest,m,t,dur,vol){
+  const g=actx.createGain(), f=actx.createBiquadFilter(); f.type='lowpass'; f.Q.value=2;
+  f.frequency.setValueAtTime(500,t); f.frequency.linearRampToValueAtTime(2600,t+0.08); f.frequency.exponentialRampToValueAtTime(1300,t+0.5);
+  g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+0.06); g.gain.setValueAtTime(vol*0.85,t+Math.max(0.1,dur-0.12)); g.gain.linearRampToValueAtTime(0,t+dur+0.15);
+  const lfo=actx.createOscillator(), lg=actx.createGain(); lfo.frequency.value=5.2; lg.gain.value=4; lfo.connect(lg);
+  for(const [type,mul,lv] of [['sawtooth',1,1],['square',1,0.4],['sawtooth',0.5,0.6]]){
+    const o=actx.createOscillator(), og=actx.createGain(); o.type=type; o.frequency.value=mf(m)*mul; og.gain.value=lv; lg.connect(o.detune);
+    o.connect(og); og.connect(f); o.start(t); o.stop(t+dur+0.2);
+  }
+  lfo.start(t); lfo.stop(t+dur+0.2); f.connect(g); g.connect(dest);
+}
+function bell(dest,m,t,vol){
+  for(const [mul,lv] of [[1,1],[2.76,0.4],[5.4,0.2]]){ const o=actx.createOscillator(), g=actx.createGain(); o.type='sine'; o.frequency.value=mf(m)*mul;
+    g.gain.setValueAtTime(vol*lv,t); g.gain.exponentialRampToValueAtTime(0.001,t+2.2/mul); o.connect(g); g.connect(dest); o.start(t); o.stop(t+2.3); }
+}
+// ---- sequencer ----
+function musStep(st,t){
+  const L=MUS.layers, bar=Math.floor(st/16)%8, s16=st%16, ci=Math.floor(bar/2)%4, C=CHORDS[ci];
+  if(st%32===0){ for(const n of C.n) strings(L.pad,n,t,STEP*32,0.035); strings(L.pad,C.b+12,t,STEP*32,0.03,600); strings(L.pad,C.b,t,STEP*32,0.035,350); }
+  // driving string ostinato
+  const pat=[1,0,1,1, 1,0,1,1, 1,0,1,1, 1,1,1,1];
+  if(pat[s16]){ const m = (s16%4===3) ? C.b+19 : C.b+12; ostinato(L.ost,m,t,0.05); if(s16%8===0) ostinato(L.ost,C.b,t,0.05); }
+  // war drums
+  if(s16===0) taiko(L.drum,t,0.5,62);
+  if(s16===6||s16===8) taiko(L.drum,t,0.32,74);
+  if(s16===11) taiko(L.drum,t,0.25,80);
+  if(MUS.int>0.55){ if(s16>=12) snare(L.drum,t,0.08+0.03*(s16-12)); if(s16===4||s16===12) snare(L.drum,t,0.12); }
+  if(bar%8===7 && s16===14 && MUS.int>0.5) cymbal(L.drum,t+STEP*2,0.05);
+  // brass melody (one phrase per chord)
+  if(st%32===0 && MUS.int>0.45){
+    let off=0; for(const [m,len] of MELODY[ci]){ brass(L.brass,m,t+off*STEP,len*STEP*0.95,0.045); brass(L.brass,m-12,t+off*STEP,len*STEP*0.95,0.025); off+=len; }
+  }
+}
+function musSchedule(){
+  if(!actx || !MUS.playing) return;
+  if(MUS.nextT<actx.currentTime) MUS.nextT=actx.currentTime+0.05;
+  while(MUS.nextT<actx.currentTime+0.2){ musStep(MUS.step,MUS.nextT); MUS.nextT+=STEP; MUS.step=(MUS.step+1)%128; }
+}
+function musicStart(){
+  if(!actx) return; musInit();
+  if(!MUS.playing){ MUS.playing=true; MUS.step=0; MUS.nextT=actx.currentTime+0.1; MUS.timer=setInterval(musSchedule,25); }
+  musVolume();
+}
+function musicStop(fade=1.5){
+  if(!MUS.bus) return;
+  MUS.bus.gain.setTargetAtTime(0,actx.currentTime,fade/3);
+  setTimeout(()=>{ if(state==='menu' || state==='dead'){ MUS.playing=false; clearInterval(MUS.timer); } },fade*1000+100);
+}
+function musVolume(){
+  if(!MUS.bus) return;
+  const v = !MUS.on ? 0 : state==='paused' ? 0.12 : state==='playing' ? 0.55 : 0;
+  MUS.bus.gain.setTargetAtTime(v,actx.currentTime,0.4);
+}
+function musicSetIntensity(x){ MUS.target=x; }
+function musicUpdate(dt){
+  if(!MUS.bus) return;
+  MUS.int+=(MUS.target-MUS.int)*Math.min(1,dt*0.6);
+  const L=MUS.layers, now=actx.currentTime, k=MUS.int;
+  L.pad.gain.setTargetAtTime(0.9-0.2*k,now,0.3);
+  L.ost.gain.setTargetAtTime(0.15+0.85*k,now,0.3);
+  L.drum.gain.setTargetAtTime(0.3+0.7*k,now,0.3);
+  L.brass.gain.setTargetAtTime(k>0.45?1:0,now,0.6);
+}
+function toggleMusic(){
+  MUS.on=!MUS.on; try{ localStorage.setItem('ef_music',MUS.on?'on':'off'); }catch(e){}
+  musVolume(); const b=$('musicBtn'); if(b) b.textContent='MUSIC: '+(MUS.on?'ON':'OFF');
+  showMsg('MUSIC '+(MUS.on?'ON':'OFF'),1);
+}
+// ---- stings ----
+function sting(kind){
+  if(!actx || !MUS.on) return; musInit();
+  const D=MUS.layers.sting, t=actx.currentTime+0.05;
+  if(kind==='waveStart'){
+    brass(D,38,t,1.4,0.07); brass(D,50,t,1.4,0.05); taiko(D,t,0.7,55); taiko(D,t+0.45,0.6,60);
+    for(let i=0;i<10;i++) snare(D,t+0.9+i*0.06,0.03+i*0.012);
+    taiko(D,t+1.5,0.8,50); cymbal(D,t+1.5,0.08);
+  } else if(kind==='clear'){
+    [[62,0,0.25],[66,0.25,0.25],[69,0.5,0.25],[74,0.75,1.6]].forEach(([m,o,d])=>brass(D,m,t+o,d,0.06));
+    strings(D,62,t+0.75,1.6,0.04,1500,0.1); strings(D,66,t+0.75,1.6,0.04,1500,0.1); taiko(D,t+0.75,0.5,60); cymbal(D,t+0.75,0.06);
+  } else if(kind==='checkpoint'){
+    bell(D,81,t,0.12); bell(D,86,t+0.25,0.12); bell(D,93,t+0.5,0.08);
+  } else if(kind==='victory'){
+    [[62,0,0.2],[62,0.22,0.2],[62,0.44,0.2],[66,0.66,0.6],[69,1.3,0.3],[74,1.65,2.4]].forEach(([m,o,d])=>{ brass(D,m,t+o,d,0.065); brass(D,m-12,t+o,d,0.035); });
+    for(const m of [50,54,57,62]) strings(D,m,t+1.65,2.6,0.035,1600,0.2);
+    for(let i=0;i<14;i++) snare(D,t+i*0.1,0.05+i*0.005);
+    taiko(D,t+1.65,0.8,50); cymbal(D,t+1.65,0.1,3.5);
+  } else if(kind==='death'){
+    [[62,0,0.9],[60,0.9,0.9],[58,1.8,0.9],[57,2.7,2.5]].forEach(([m,o,d])=>brass(D,m-12,t+o,d,0.05));
+    for(const m of [38,45,50,53]) strings(D,m,t+2.7,3.5,0.04,500,0.8);
+    taiko(D,t,0.6,45); taiko(D,t+2.7,0.5,40);
+  }
+}
+addEventListener('keydown',e=>{ if(e.code==='KeyM' && state!=='menu') toggleMusic(); });
+setInterval(()=>musVolume(),500);   // keeps music volume in step with play/pause/menu
 
 /* ================= INPUT ================= */
 const keys={}; let mouseDown=false, rmb=false, jumpQueued=false;
@@ -2093,7 +2254,7 @@ function goToMap(id){
   Object.assign(player,{pos:SPAWN.clone(),vel:new V3(),yaw:0,pitch:0,crouch:false,crouchToggle:false});
   playerHP=100; grenadesLeft=3; wave=1; waveTimer=0;
   checkpoint={map:id,wave:1,kills,reserve:gun.reserve};   // arriving on a new map is a checkpoint
-  setTimeout(()=>showMsg(`CHECKPOINT REACHED · ${MAPS[id].short} WAVE 1`,3),3800);
+  setTimeout(()=>{ showMsg(`CHECKPOINT REACHED · ${MAPS[id].short} WAVE 1`,3); sting('checkpoint'); },3800);
   $('mapdone').style.opacity=0;
   showMsg(`${MAPS[id].name.toUpperCase()} · WAVE 1`,3.5);
   $('side').textContent=SIDES[selSide].title+' · '+WEAPONS[gun.type].name+' · '+MAPS[id].short;
@@ -2103,6 +2264,7 @@ function goToMap(id){
 /* ================= GAME FLOW ================= */
 function startGame(){
   startProtection();
+  musicStart(); MUS.int=0; MUS.target=0;
   spawnWorld(selSide,selWeapon,false);
   Object.assign(player,{pos:SPAWN.clone(),vel:new V3(),yaw:0,pitch:0,onGround:true,crouch:false,crouchToggle:false,eye:1.62,stamina:1,landDip:0,recoilAcc:0});
   const W=WEAPONS[selWeapon];
@@ -2160,6 +2322,8 @@ $('deploy').onclick=()=>{
 $('continueBtn').onclick=()=>{ initAudio(); continueGame(); lockPointer(); };
 $('deleteSave').onclick=()=>{ clearSave(); refreshContinue(); };
 $('saveBtn').onclick=()=>{ writeSave(false); };
+$('musicBtn').onclick=()=>{ initAudio(); toggleMusic(); };
+$('musicBtn').textContent='MUSIC: '+(MUS.on?'ON':'OFF');
 $('resume').onclick=()=>{ initAudio(); lockPointer(); };
 $('respawnBtn').onclick=()=>{
   initAudio();
@@ -2170,6 +2334,7 @@ $('respawnBtn').onclick=()=>{
 $('deadMenu').onclick=()=>{ playerDead=false; $('dead').style.display='none'; $('toMenu').onclick(); };
 $('toMenu').onclick=()=>{
   refreshContinue();
+  state='menu'; musicStop(1);
   document.querySelectorAll('.card').forEach(c=>c.classList.toggle('sel',c.dataset.side===selSide));
   renderWeaponButtons();
   state='menu'; $('pause').style.display='none'; document.body.style.cursor='default'; $('hud').style.display='none'; $('menu').style.display='flex';
