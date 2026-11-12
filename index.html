@@ -52,6 +52,8 @@
   #hpwrap{height:10px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.4);margin:4px 0 8px}
   #hpbar{height:100%;width:100%;background:#cfd8b8}
   #hit.kill:before,#hit.kill:after{background:#ff5a3c}
+  #mapdone{position:absolute;top:30%;width:100%;text-align:center;text-shadow:0 3px 6px #000;opacity:0;transition:opacity .6s;color:#f0e6c8}
+  #protect{position:absolute;top:14%;width:100%;text-align:center;font-size:17px;letter-spacing:2px;color:#9fe0ff;text-shadow:0 2px 4px #000;opacity:0;transition:opacity .3s}
   #err{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:#111;color:#e88;font-size:18px;padding:40px;text-align:center;z-index:99}
 </style>
 </head>
@@ -98,6 +100,8 @@
   <div id="cross"></div>
   <div id="hit"></div>
   <div id="msg"></div>
+  <div id="protect"></div>
+  <div id="mapdone"></div>
   <div id="reloadTxt">RELOADING…</div>
   <div id="vig"></div>
   <div id="dmgdir"></div>
@@ -171,7 +175,7 @@ scene.fog = new THREE.Fog(SKY, 10, 110);
 const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.05, 300);
 camera.rotation.order = 'YXZ';
 
-scene.add(new THREE.HemisphereLight(0xd6dce4, 0x5a5048, 1.35));
+const hemi=new THREE.HemisphereLight(0xd6dce4, 0x5a5048, 1.35); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffe2c4, 1.5);
 sun.position.set(30,50,20);
 sun.castShadow = true;
@@ -258,13 +262,18 @@ const snowTex = canvasTex(256,(x,s)=>{
 snowTex.wrapS = snowTex.wrapT = THREE.RepeatWrapping; snowTex.repeat.set(50,50);
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(240,240), new THREE.MeshStandardMaterial({map:snowTex,roughness:1}));
 ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground); shootables.push(ground);
+const mapRoot=new THREE.Group(); scene.add(mapRoot);
+let mapSnow=true;
+const capMat=()=> mapSnow ? M.snow : M.dust;
 
 // invisible map borders
 const L=70;
-addCollider(new THREE.Box3(new V3(-L-5,0,-L-5),new V3(L+5,20,-L)));
-addCollider(new THREE.Box3(new V3(-L-5,0,L),new V3(L+5,20,L+5)));
-addCollider(new THREE.Box3(new V3(-L-5,0,-L),new V3(-L,20,L)));
-addCollider(new THREE.Box3(new V3(L,0,-L),new V3(L+5,20,L)));
+function addBorders(){
+  addCollider(new THREE.Box3(new V3(-L-5,0,-L-5),new V3(L+5,20,-L)));
+  addCollider(new THREE.Box3(new V3(-L-5,0,L),new V3(L+5,20,L+5)));
+  addCollider(new THREE.Box3(new V3(-L-5,0,-L),new V3(-L,20,L)));
+  addCollider(new THREE.Box3(new V3(L,0,-L),new V3(L+5,20,L)));
+}
 
 const brickMats = [mat(0x7a4b3a),mat(0x6b4234),mat(0x845848),mat(0x8b8277)];
 function ruinWall(x0,z0,len,alongX,maxH,gaps=[]){
@@ -283,7 +292,7 @@ function sandbags(cx,cz,len){ // line along X
     const m = shade(new THREE.Mesh(bagGeo,bagMats[(rnd()*3)|0]));
     m.position.set(cx-len/2+i*0.5+(r%2)*0.25+0.25, r*0.26+0.13, cz+(rnd()-.5)*0.06);
     m.rotation.y=(rnd()-.5)*0.25; m.scale.set(1,1-r*0.05,1);
-    scene.add(m); shootables.push(m);
+    mapRoot.add(m); shootables.push(m);
   }
   addCollider(new THREE.Box3(new V3(cx-len/2,0,cz-0.25),new V3(cx+len/2+0.25,0.8,cz+0.25)));
 }
@@ -292,18 +301,18 @@ function hedgehog(x,z){
   const a=box(0.12,0.12,1.7,st); a.rotation.set(0.6,0,0);
   const b=box(0.12,0.12,1.7,st); b.rotation.set(0,0,0.6); b.rotation.y=Math.PI/2;
   const c=box(0.12,1.7,0.12,st); c.rotation.set(0.6,0,0.6);
-  g.add(a,b,c); g.position.set(x,0.6,z); g.rotation.y=rnd()*3; scene.add(g);
+  g.add(a,b,c); g.position.set(x,0.6,z); g.rotation.y=rnd()*3; mapRoot.add(g);
   g.children.forEach(m=>shootables.push(m));
   addCollider(new THREE.Box3(new V3(x-0.55,0,z-0.55),new V3(x+0.55,1.2,z+0.55)));
 }
 function pine(x,z){
   const s=0.8+rnd()*0.6;
-  const trunk=cyl(0.12*s,0.18*s,2*s,mat(0x4a3526)); trunk.position.set(x,s,z); scene.add(trunk);
+  const trunk=cyl(0.12*s,0.18*s,2*s,mat(0x4a3526)); trunk.position.set(x,s,z); mapRoot.add(trunk);
   for(let i=0;i<3;i++){
     const c=shade(new THREE.Mesh(new THREE.ConeGeometry((1.6-i*0.4)*s,1.8*s,9),mat(0x2c4430)));
-    c.position.set(x,(1.6+i*1.0)*s,z); scene.add(c);
+    c.position.set(x,(1.6+i*1.0)*s,z); mapRoot.add(c);
     const w=shade(new THREE.Mesh(new THREE.ConeGeometry((1.2-i*0.32)*s,0.5*s,9),mat(0xe8edf0)));
-    w.position.set(x,(2.25+i*1.0)*s,z); scene.add(w);
+    w.position.set(x,(2.25+i*1.0)*s,z); mapRoot.add(w);
   }
   addCollider(new THREE.Box3(new V3(x-0.25,0,z-0.25),new V3(x+0.25,4*s,z+0.25)));
   shootables.push(trunk);
@@ -326,10 +335,13 @@ function sBox(x,y,z,w,h,d,m,collide=true,rx=0,ry=0,rz=0){ // y = bottom
 }
 function flushBatch(shadow=true){
   for(const [m,geos] of batch){
-    const merged=mergeGeometries(geos.map(g=>g.index?g:g),false);
+    const mixed=geos.some(g=>!g.index);
+    const list=mixed?geos.map(g=>g.index?g.toNonIndexed():g):geos;
+    for(const g of list) for(const k of Object.keys(g.attributes)) if(!['position','normal','uv'].includes(k)) g.deleteAttribute(k);
+    const merged=mergeGeometries(list,false);
     if(!merged) continue;
     const me=new THREE.Mesh(merged,m); me.castShadow=shadow; me.receiveShadow=true;
-    scene.add(me); shootables.push(me);
+    mapRoot.add(me); shootables.push(me);
     geos.forEach(g=>g.dispose());
   }
   batch.clear();
@@ -347,7 +359,8 @@ const M={
   concrete:mat(0x77756f), dark:mat(0x1d1c1a,{roughness:1}), snow:mat(0xe9edf0,{roughness:1}),
   char:mat(0x2a2823,{roughness:.9,metalness:.2}), rust:mat(0x5c3a26,{roughness:.9,metalness:.3}),
   dirt:mat(0x5d5144,{roughness:1}), slush:mat(0xb8b5ae,{roughness:1}), wood:mat(0x3a2c20,{roughness:1}),
-  wire:new THREE.LineBasicMaterial({color:0x2a2a2a})
+  wire:new THREE.LineBasicMaterial({color:0x2a2a2a}),
+  dust:mat(0x8b7d62,{roughness:1}), earthRim:mat(0x6a5a42,{roughness:1})
 };
 
 // ---------- ruined apartment block ----------
@@ -374,7 +387,7 @@ function ruinedBuilding(x0,z0,x1,z1,floors,style,doors={}){
       const w = alongX ? cw : T, d = alongX ? T : cw;
       for(const [a,b] of spans){ if(b-a<0.05) continue; sBox(cx,a,cz,w,b-a,d,m,a<3.5); }
       const top=spans.length?spans[spans.length-1][1]:0;
-      if(top>0.2) sBox(cx,top,cz,w+0.04,0.07,d+0.08,M.snow,false);
+      if(top>0.2) sBox(cx,top,cz,w+0.04,0.07,d+0.08,capMat(),false);
       if(breach && rnd()<0.7) rubble(cx+(alongX?0:(id==='w'?-1:1)*1.2),cz+(alongX?(id==='n'?-1:1)*1.2:0),1.6,10,mats);
     }
   }
@@ -386,7 +399,7 @@ function ruinedBuilding(x0,z0,x1,z1,floors,style,doors={}){
     const west=rnd()<0.5;
     const ax0=west?fx0:fx1-(fx1-fx0)*part, ax1=west?fx0+(fx1-fx0)*part:fx1;
     sBox((ax0+ax1)/2,f*3-0.3,(fz0+fz1)/2,ax1-ax0,0.3,fz1-fz0,M.concrete,f===1);
-    sBox((ax0+ax1)/2,f*3,(fz0+fz1)/2,ax1-ax0,0.06,fz1-fz0,M.snow,false);
+    sBox((ax0+ax1)/2,f*3,(fz0+fz1)/2,ax1-ax0,0.06,fz1-fz0,capMat(),false);
     // a collapsed slab hanging down
     if(rnd()<0.6){ const ex=west?ax1:ax0; addGeo(new THREE.BoxGeometry(3,0.3,fz1-fz0-0.4),M.concrete,ex+(west?1.2:-1.2),f*3-1.2,(fz0+fz1)/2,0,0,(west?-1:1)*0.7); }
   }
@@ -406,7 +419,7 @@ function rubble(x,z,r,count,mats=M.brick){
   const mound=new THREE.SphereGeometry(r,10,6,0,Math.PI*2,0,Math.PI/2); mound.scale(1,0.38,1);
   addGeo(mound,rnd()<0.5?M.dirt:mats[0],x,0,z);
   const snowCap=new THREE.SphereGeometry(r*0.75,10,6,0,Math.PI*2,0,Math.PI/2); snowCap.scale(1,0.3,1);
-  addGeo(snowCap,M.snow,x+0.1,0.06,z-0.1);
+  addGeo(snowCap,capMat(),x+0.1,0.06,z-0.1);
   // stepped colliders so you can walk up it
   addCollider(new THREE.Box3(new V3(x-r*0.7,0,z-r*0.7),new V3(x+r*0.7,Math.min(0.4,r*0.38*0.55),z+r*0.7)));
   if(r>1.4) addCollider(new THREE.Box3(new V3(x-r*0.35,0,z-r*0.35),new V3(x+r*0.35,r*0.38*0.85,z+r*0.35)));
@@ -425,7 +438,7 @@ function wreckTank(x,z,ry,german){
   }
   part(new THREE.BoxGeometry(2.2,0.85,2.2),C,0.2,1.95,-0.7,0,0.25,0.12); // turret, knocked askew
   part(new THREE.CylinderGeometry(0.09,0.11,3.0,10),C,0.35,2.15,-2.6,Math.PI/2-0.18,0.25,0);
-  part(new THREE.BoxGeometry(2.6,0.07,4.0),M.snow,0,1.58,0.7);
+  part(new THREE.BoxGeometry(2.6,0.07,4.0),capMat(),0,1.58,0.7);
   rotCollider(x,z,3.4,6.4,ry,2.0);
 }
 function wreckTruck(x,z,ry){
@@ -436,7 +449,7 @@ function wreckTruck(x,z,ry){
   part(new THREE.BoxGeometry(2.2,0.15,3.4),M.wood,0,0.95,0.6);
   for(const sx of [-1,1]) part(new THREE.BoxGeometry(0.08,0.6,3.4),M.wood,sx*1.08,1.3,0.6,0,0,sx*0.3);
   for(const [wx,wz] of [[-0.95,-2.6],[0.95,-2.6],[-0.95,1.2],[0.95,1.2]]) part(new THREE.CylinderGeometry(0.45,0.45,0.3,12),M.dark,wx,0.45,wz,0,0,Math.PI/2);
-  part(new THREE.BoxGeometry(2.0,0.06,3.2),M.snow,0,1.06,0.6);
+  part(new THREE.BoxGeometry(2.0,0.06,3.2),capMat(),0,1.06,0.6);
   rotCollider(x,z,2.3,5.4,ry,2.0);
 }
 function overturnedTram(x,z,ry){
@@ -458,7 +471,7 @@ function barbedWire(x0,z0,x1,z1){
   }
   for(const hgt of [0.3,0.6,0.9]){
     const p=[]; for(let i=0;i<=n*4;i++){ const t=i/(n*4); p.push(new V3(x0+(x1-x0)*t+(rnd()-.5)*0.1,hgt+(i%2?0.08:-0.06),z0+(z1-z0)*t+(rnd()-.5)*0.1)); }
-    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(p),M.wire));
+    mapRoot.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(p),M.wire));
   }
   const w=Math.abs(x1-x0)+0.3, d=Math.abs(z1-z0)+0.3;
   addCollider(new THREE.Box3(new V3(Math.min(x0,x1)-0.15,0,Math.min(z0,z1)-0.15),new V3(Math.min(x0,x1)-0.15+w,0.9,Math.min(z0,z1)-0.15+d))).noBullet=true;
@@ -467,7 +480,7 @@ function crater(x,z,r){
   const g=new THREE.CircleGeometry(r,20); g.rotateX(-Math.PI/2);
   addGeo(g,M.dirt,x,0.015,z);
   const rim=new THREE.TorusGeometry(r,r*0.22,6,18); rim.rotateX(Math.PI/2); rim.scale(1,0.5,1);
-  addGeo(rim,M.slush,x,0.05,z);
+  addGeo(rim,(mapSnow?M.slush:M.earthRim),x,0.05,z);
   for(let i=0;i<6;i++){ const a=rnd()*7; addGeo(new THREE.BoxGeometry(0.3,0.15,0.25),M.brick[0],x+Math.cos(a)*r*1.2,0.07,z+Math.sin(a)*r*1.2,0,rnd()*3,0); }
 }
 function brokenPole(x,z){
@@ -483,6 +496,43 @@ function deadTree(x,z){
   addCollider(new THREE.Box3(new V3(x-0.2,0,z-0.2),new V3(x+0.2,h,z+0.2)));
 }
 
+// ---------- fires and smoke ----------
+const smokeTex=canvasTex(64,(x,s)=>{ const g=x.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2); g.addColorStop(0,'rgba(255,255,255,1)'); g.addColorStop(0.6,'rgba(255,255,255,.4)'); g.addColorStop(1,'rgba(255,255,255,0)'); x.fillStyle=g; x.fillRect(0,0,s,s); });
+const fires=[];
+function addFire(x,y,z,size,withLight){
+  const f={pos:new V3(x,y,z),size,smoke:[],flames:[],light:null};
+  for(let i=0;i<Math.round(14+size*6);i++){
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:smokeTex,color:0x2c2a28,transparent:true,depthWrite:false,opacity:0}));
+    sp.userData.t=Math.random()*1; mapRoot.add(sp); f.smoke.push(sp);
+  }
+  for(let i=0;i<5;i++){
+    const fl=new THREE.Sprite(new THREE.SpriteMaterial({map:smokeTex,color:0xff7a20,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
+    fl.userData.o=new V3((Math.random()-.5)*size*0.8,0,(Math.random()-.5)*size*0.8); mapRoot.add(fl); f.flames.push(fl);
+  }
+  if(withLight){ f.light=new THREE.PointLight(0xff8a30,25,14*size/1.5); f.light.position.set(x,y+1,z); mapRoot.add(f.light); }
+  fires.push(f);
+}
+function updateFires(dt,t){
+  for(const f of fires){
+    const life=9;
+    for(const sp of f.smoke){
+      sp.userData.t+=dt/life; if(sp.userData.t>1) sp.userData.t-=1;
+      const k=sp.userData.t;
+      sp.position.set(f.pos.x+Math.sin(k*5+f.size)*k*2+k*4, f.pos.y+0.5+k*14*f.size/1.5, f.pos.z+Math.cos(k*4)*k*1.5);
+      sp.scale.setScalar(f.size*(1.2+k*6));
+      sp.material.opacity=Math.min(1,k*6)*(1-k)*0.55;
+    }
+    f.flames.forEach((fl,i)=>{
+      const fk=0.6+0.4*Math.sin(t*12+i*2.1)+0.2*Math.sin(t*23+i);
+      fl.position.set(f.pos.x+fl.userData.o.x,f.pos.y+0.4*f.size+fk*0.3*f.size,f.pos.z+fl.userData.o.z);
+      fl.scale.set(f.size*0.9*fk,f.size*1.4*fk,1);
+      fl.material.opacity=0.55+0.3*fk;
+    });
+    if(f.light) f.light.intensity=18+10*Math.sin(t*9+f.size)+6*Math.sin(t*21);
+  }
+}
+
+function buildStalingrad(){
 // ---------- build the city ----------
 // main street runs north (-Z) from the player's start; cross streets at z≈-12 and z≈11
 ruinedBuilding(-22,16,-8,30,4,'brick',{e:[3,8]});          // A
@@ -528,9 +578,9 @@ for(const [tx,tz] of [[46,14],[50,-12],[-62,-60],[-60,55],[48,46],[-30,-62]]) de
 sBox(54.5,0,0,1.2,1.5,140,M.concrete);             // embankment wall
 sBox(54.5,1.5,0,1.3,0.08,140,M.snow,false);
 const water=new THREE.Mesh(new THREE.PlaneGeometry(80,240),new THREE.MeshStandardMaterial({color:0x26333a,roughness:.25,metalness:.4}));
-water.rotation.x=-Math.PI/2; water.position.set(95,0.04,0); water.receiveShadow=true; scene.add(water);
+water.rotation.x=-Math.PI/2; water.position.set(95,0.04,0); water.receiveShadow=true; mapRoot.add(water);
 for(let i=0;i<70;i++){ const s=1+rnd()*5; addGeo(new THREE.BoxGeometry(s,0.12,s*(0.5+rnd())),M.snow,57+rnd()*70,0.05,(rnd()*2-1)*110,0,rnd()*3,0); }
-const farBank=new THREE.Mesh(new THREE.PlaneGeometry(60,240),M.snow); farBank.rotation.x=-Math.PI/2; farBank.position.set(150,0.06,0); scene.add(farBank);
+const farBank=new THREE.Mesh(new THREE.PlaneGeometry(60,240),M.snow); farBank.rotation.x=-Math.PI/2; farBank.position.set(150,0.06,0); mapRoot.add(farBank);
 
 flushBatch(true);
 
@@ -545,41 +595,6 @@ for(let i=0;i<140;i++){
 for(const [cx,cz] of [[-90,-40],[-70,-100],[40,-110]]) addGeo(new THREE.CylinderGeometry(1.2,1.8,30,10),skyM,cx,15,cz); // chimneys
 flushBatch(false);
 
-// ---------- fires and smoke ----------
-const smokeTex=canvasTex(64,(x,s)=>{ const g=x.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2); g.addColorStop(0,'rgba(255,255,255,1)'); g.addColorStop(0.6,'rgba(255,255,255,.4)'); g.addColorStop(1,'rgba(255,255,255,0)'); x.fillStyle=g; x.fillRect(0,0,s,s); });
-const fires=[];
-function addFire(x,y,z,size,withLight){
-  const f={pos:new V3(x,y,z),size,smoke:[],flames:[],light:null};
-  for(let i=0;i<Math.round(14+size*6);i++){
-    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:smokeTex,color:0x2c2a28,transparent:true,depthWrite:false,opacity:0}));
-    sp.userData.t=Math.random()*1; scene.add(sp); f.smoke.push(sp);
-  }
-  for(let i=0;i<5;i++){
-    const fl=new THREE.Sprite(new THREE.SpriteMaterial({map:smokeTex,color:0xff7a20,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
-    fl.userData.o=new V3((Math.random()-.5)*size*0.8,0,(Math.random()-.5)*size*0.8); scene.add(fl); f.flames.push(fl);
-  }
-  if(withLight){ f.light=new THREE.PointLight(0xff8a30,25,14*size/1.5); f.light.position.set(x,y+1,z); scene.add(f.light); }
-  fires.push(f);
-}
-function updateFires(dt,t){
-  for(const f of fires){
-    const life=9;
-    for(const sp of f.smoke){
-      sp.userData.t+=dt/life; if(sp.userData.t>1) sp.userData.t-=1;
-      const k=sp.userData.t;
-      sp.position.set(f.pos.x+Math.sin(k*5+f.size)*k*2+k*4, f.pos.y+0.5+k*14*f.size/1.5, f.pos.z+Math.cos(k*4)*k*1.5);
-      sp.scale.setScalar(f.size*(1.2+k*6));
-      sp.material.opacity=Math.min(1,k*6)*(1-k)*0.55;
-    }
-    f.flames.forEach((fl,i)=>{
-      const fk=0.6+0.4*Math.sin(t*12+i*2.1)+0.2*Math.sin(t*23+i);
-      fl.position.set(f.pos.x+fl.userData.o.x,f.pos.y+0.4*f.size+fk*0.3*f.size,f.pos.z+fl.userData.o.z);
-      fl.scale.set(f.size*0.9*fk,f.size*1.4*fk,1);
-      fl.material.opacity=0.55+0.3*fk;
-    });
-    if(f.light) f.light.intensity=18+10*Math.sin(t*9+f.size)+6*Math.sin(t*21);
-  }
-}
 addFire(-1.5,1.6,-4,1.2,true);       // burning tank in the street
 addFire(-16,0,0,1.6,true);           // building B
 addFire(14,1,-18,1.0,false);         // truck
@@ -590,12 +605,200 @@ addFire(-60,0,-70,3.5,false);        // big distant fires
 addFire(30,0,-90,4,false);
 addFire(-85,0,40,4,false);
 
+}
+/* ================= KURSK, SUMMER 1943 ================= */
+const grassTex = canvasTex(256,(x,s)=>{
+  x.fillStyle='#7f8a4c'; x.fillRect(0,0,s,s);
+  for(let i=0;i<3000;i++){ const c=[[110,125,62],[132,138,70],[96,108,52],[150,140,80]][(Math.random()*4)|0];
+    x.fillStyle=`rgba(${c[0]},${c[1]},${c[2]},.6)`; x.fillRect(Math.random()*s,Math.random()*s,2+Math.random()*3,2+Math.random()*4); }
+  for(let i=0;i<25;i++){ x.fillStyle='rgba(110,90,60,.25)'; x.beginPath(); x.arc(Math.random()*s,Math.random()*s,5+Math.random()*12,0,7); x.fill(); }
+});
+grassTex.wrapS=grassTex.wrapT=THREE.RepeatWrapping; grassTex.repeat.set(50,50);
+
+function buildKursk(){
+  const K={
+    earth:mat(0x6e5b40,{roughness:1}), earthD:mat(0x4f4130,{roughness:1}), logs:[mat(0x6e5236,{roughness:.9}),mat(0x7a5c3c,{roughness:.9}),mat(0x5f4630,{roughness:.9})],
+    thatch:mat(0x9a8650,{roughness:1}), trim:mat(0xd9d2bf,{roughness:.8}), road:mat(0x7d6648,{roughness:1}), rut:mat(0x5e4c36,{roughness:1}),
+    leaf:[mat(0x4d6b2e,{roughness:1}),mat(0x5a7a34,{roughness:1}),mat(0x40602a,{roughness:1})], trunk:mat(0x4a3a2a,{roughness:1}),
+    hay:mat(0xc9a95a,{roughness:1}), plank:mat(0x8a6a44,{roughness:1}), brick:mat(0x8a4f3a)
+  };
+  // ---- roads ----
+  sBox(0,0.012,0,7,0.01,140,K.road,false);
+  sBox(-33,0.013,5,66,0.01,6,K.road,false);
+  for(const rx of [-1.6,1.6]) sBox(rx,0.016,0,0.6,0.01,140,K.rut,false);
+
+  // ---- trench lines (earth parapets with log walls) ----
+  function trench(x0,x1,z,front,gaps){
+    const segs=[]; let a=x0;
+    for(const [g0,g1] of gaps){ segs.push([a,g0]); a=g1; } segs.push([a,x1]);
+    for(const [s0,s1] of segs){ if(s1-s0<0.5) continue;
+      const cx=(s0+s1)/2, L=s1-s0;
+      for(const side of [-1,1]){
+        const hgt = side===front ? 1.0 : 0.75, zz=z+side*1.15;
+        const berm=new THREE.CylinderGeometry(0.55,0.55,L,8,1); berm.rotateZ(Math.PI/2); berm.scale(1,hgt/0.55,1.1);
+        addGeo(berm,K.earth,cx,0,zz);
+        addCollider(new THREE.Box3(new V3(s0,0,zz-0.55),new V3(s1,0.9,zz+0.55)));
+        sBox(cx,0,z+side*0.62,L,hgt*0.85,0.1,K.logs[2],false);         // log revetment
+        for(let px=s0+0.5;px<s1;px+=1.6) sBox(px,0,z+side*0.56,0.14,hgt*0.9,0.14,K.logs[0],false);
+      }
+      sBox(cx,0.011,z,L,0.01,1.2,K.earthD,false);
+      // sandbag nests on the front
+      for(let px=s0+3;px<s1-2;px+=9) for(let r=0;r<2;r++) for(let i=0;i<4;i++) sBox(px-0.8+i*0.52+(r%2)*0.25,0.75+r*0.24,z+front*1.15,0.5,0.24,0.38,bagMats[i%3],false);
+    }
+  }
+  trench(-42,42,24,-1,[[-3,3],[-20,-17],[15,18]]);   // your line (enemy is north, -Z)
+  trench(-42,42,-27,1,[[-3,3],[16,20],[-12,-9]]);    // enemy line
+
+  // ---- village of log houses (izbas) ----
+  function izba(cx,cz,alongX,burnt){
+    const w=alongX?6:5, d=alongX?5:6, x0=cx-w/2, x1=cx+w/2, z0=cz-d/2, z1=cz+d/2, T=0.35, H=2.7;
+    const sides=[[x0,z0,w,true,'n'],[x0,z1-T,w,true,'s'],[x0,z0+T,d-2*T,false,'w'],[x1-T,z0+T,d-2*T,false,'e']];
+    const door = cz<5 ? 's' : 'n';            // doors face the road
+    for(const [sx,sz,len,ax,id] of sides){
+      const cols=Math.round(len), cw=len/cols;
+      for(let i=0;i<cols;i++){
+        let h = burnt ? 0.5+rnd()*2.0 : H;
+        let spans=[[0,h]];
+        const cut=(a,b)=>{ const o=[]; for(const [s,e] of spans){ if(b<=s||a>=e){o.push([s,e]);continue;} if(a>s)o.push([s,a]); if(b<e)o.push([b,e]); } spans=o; };
+        const mid=Math.floor(cols/2);
+        if(id===door && i===mid) cut(0,2.1);
+        const win = !burnt && i%2===1 && !(id===door && i===mid);
+        if(win) cut(1.0,1.8);
+        const m = burnt ? M.char : K.logs[(rnd()*3)|0];
+        const x = ax ? sx+(i+0.5)*cw : sx+T/2, z = ax ? sz+T/2 : sz+(i+0.5)*cw;
+        for(const [a,b] of spans) if(b-a>0.05) sBox(x,a,z,ax?cw:T,b-a,ax?T:cw,m,a<2);
+        if(win){ // carved white window frame
+          const o = ax ? (id==='n'?-1:1) : (id==='w'?-1:1), fx = ax?x:x+o*0.2, fz = ax?z+o*0.2:z;
+          sBox(fx,0.92,fz,ax?cw*0.9:0.05,0.08,ax?0.05:cw*0.9,K.trim,false);
+          sBox(fx,1.8,fz,ax?cw*0.95:0.05,0.14,ax?0.05:cw*0.95,K.trim,false);
+          sBox(fx,1.0,fz,ax?cw*0.8:0.05,0.8,ax?0.05:cw*0.8,M.dark,false);
+        }
+      }
+    }
+    if(!burnt){ // pitched thatched roof + chimney
+      const a=0.62, half=(alongX?d:w)/2+0.4, slope=half/Math.cos(a), rise=Math.tan(a)*half*0.5;
+      for(const sd of [-1,1]){
+        if(alongX) addGeo(new THREE.BoxGeometry(w+0.6,0.16,slope),K.thatch,cx,H+rise,cz+sd*half/2,sd*a,0,0);
+        else addGeo(new THREE.BoxGeometry(slope,0.16,d+0.6),K.thatch,cx+sd*half/2,H+rise,cz,0,0,-sd*a);
+      }
+      // gable ends
+      const tri=new THREE.Shape(); const gw=(alongX?d:w)/2; tri.moveTo(-gw,0); tri.lineTo(gw,0); tri.lineTo(0,Math.tan(a)*gw); tri.closePath();
+      for(const sd of [-1,1]){ const g=new THREE.ShapeGeometry(tri); if(alongX){ g.rotateY(Math.PI/2); addGeo(g,K.logs[1],cx+sd*(w/2-0.05),H,cz); } else addGeo(g,K.logs[1],cx,H,cz+sd*(d/2-0.05)); }
+      sBox(cx+0.8,H,cz+0.6,0.6,1.8,0.6,K.brick,false);
+    }
+    sBox(cx,0.012,cz,w-0.6,0.01,d-0.6,K.plank,false);
+  }
+  izba(-24,12,true,false); izba(-33,12,true,false); izba(-42,12,true,true); izba(-51,12,true,false);
+  izba(-26,-4,true,false); izba(-36,-4,true,true); izba(-46,-4,true,false);
+  izba(-30,-15,false,true); izba(-52,-14,false,false);
+  // fences along the road
+  function fence(x0,x1,z){ for(let x=x0;x<=x1;x+=1.5) sBox(x,0,z,0.1,1.1,0.1,K.plank,false);
+    for(const y of [0.4,0.85]) sBox((x0+x1)/2,y,z,x1-x0,0.08,0.05,K.plank,false);
+    addCollider(new THREE.Box3(new V3(x0,0,z-0.1),new V3(x1,0.9,z+0.1))).noBullet=true; }
+  fence(-56,-22,8.6); fence(-56,-22,1.4);
+  // well
+  addGeo(new THREE.CylinderGeometry(0.8,0.85,0.8,14,1,true),K.logs[0],-58,0.4,5);
+  sBox(-58.7,0,5,0.12,2,0.12,K.logs[2],false); sBox(-57.3,0,5,0.12,2,0.12,K.logs[2],false);
+  addGeo(new THREE.BoxGeometry(1.8,0.1,1.2),K.thatch,-58,2.05,5,0,0,0);
+  addCollider(new THREE.Box3(new V3(-58.85,0,4.15),new V3(-57.15,0.8,5.85)));
+
+  // ---- trees (blocky) ----
+  function tree(x,z,s=1){
+    sBox(x,0,z,0.45*s,2.6*s,0.45*s,K.trunk,false);
+    for(let i=0;i<3;i++){ const r=(1.3-i*0.25)*s; addGeo(new RoundedBoxGeometry(r*2,r*1.4,r*2,2,0.25),K.leaf[(rnd()*3)|0],x+(rnd()-.5)*0.6*s,2.6*s+i*0.9*s,z+(rnd()-.5)*0.6*s,0,rnd()*3,0); }
+    addCollider(new THREE.Box3(new V3(x-0.25*s,0,z-0.25*s),new V3(x+0.25*s,3*s,z+0.25*s)));
+  }
+  for(let z=-64;z<=64;z+=4.5) tree(-62+rnd()*3,z+rnd()*2,0.9+rnd()*0.4);
+  for(let x=-58;x<=62;x+=5) tree(x+rnd()*2,-64+rnd()*3,0.9+rnd()*0.4);
+  for(const [cx,cz] of [[55,-42],[52,44],[-10,46],[22,48],[-58,40],[60,0]])
+    for(let i=0;i<6;i++) tree(cx+(rnd()-.5)*10,cz+(rnd()-.5)*10,0.8+rnd()*0.5);
+
+  // ---- haystacks ----
+  for(const [hx,hz] of [[14,32],[22,36],[-12,40],[-48,30],[40,-34],[30,30],[-40,-30]]){
+    addGeo(new THREE.CylinderGeometry(1.2,1.3,1.5,12),K.hay,hx,0.75,hz);
+    addGeo(new THREE.ConeGeometry(1.3,1.2,12),K.hay,hx,2.1,hz);
+    addCollider(new THREE.Box3(new V3(hx-1,0,hz-1),new V3(hx+1,1.9,hz+1)));
+  }
+  // ---- burning tanks, wrecked anti-tank gun ----
+  wreckTank(12,-4,0.4,false); wreckTank(25,8,2.1,true); wreckTank(36,-11,1.0,true);
+  wreckTank(48,14,-0.6,false); wreckTank(-10,-20,0.3,true); wreckTank(31,-42,1.7,true);
+  function atGun(x,z,ry){
+    const P=new THREE.Matrix4().compose(new V3(x,0,z),new THREE.Quaternion().setFromEuler(new THREE.Euler(0,ry,0.1)),ONE);
+    addGeo(new THREE.BoxGeometry(1.6,1.0,0.06),M.char,0,0.9,0,0,0,0,P);
+    addGeo(new THREE.CylinderGeometry(0.05,0.06,2.4,8),M.char,0,0.95,-1.1,Math.PI/2,0,0,P);
+    for(const sx of [-1,1]) addGeo(new THREE.CylinderGeometry(0.4,0.4,0.12,12),M.dark,sx*0.75,0.4,0.2,0,0,Math.PI/2,P);
+    for(const sx of [-1,1]) addGeo(new THREE.BoxGeometry(0.1,0.1,2.2),M.char,sx*0.4,0.15,1.2,0,sx*0.3,0,P);
+    addCollider(new THREE.Box3(new V3(x-1,0,z-1),new V3(x+1,1.3,z+1)));
+  }
+  atGun(8,-30.5,0.2); atGun(-28,26.5,2.9);
+  // ---- shell craters in no-man's land ----
+  for(let i=0;i<22;i++) crater(-38+rnd()*90,-20+rnd()*38,1.2+rnd()*1.8);
+  for(const [px,pz] of [[5,-50],[5,-30],[5,-8],[5,16],[5,40]]) brokenPole(px,pz);
+  hedgehog(-6,-12); hedgehog(8,6); hedgehog(-3,15);
+
+  flushBatch(true);
+
+  // ---- wheat fields (instanced, they hide you visually but don't stop bullets) ----
+  function wheat(x0,z0,x1,z1,dens){
+    const n=Math.round((x1-x0)*(z1-z0)*dens);
+    const im=new THREE.InstancedMesh(new THREE.BoxGeometry(0.42,1,0.42),new THREE.MeshStandardMaterial({color:0xffffff,roughness:1}),n);
+    const mtx=new THREE.Matrix4(), q=new THREE.Quaternion(), c=new THREE.Color();
+    for(let i=0;i<n;i++){
+      const x=x0+rnd()*(x1-x0), z=z0+rnd()*(z1-z0), h=0.75+rnd()*0.45;
+      mtx.compose(new V3(x,h/2,z),q.setFromEuler(new THREE.Euler((rnd()-.5)*0.15,rnd()*3,(rnd()-.5)*0.15)),new V3(0.7+rnd()*0.6,h,0.7+rnd()*0.6));
+      im.setMatrixAt(i,mtx); im.setColorAt(i,c.setHSL(0.11+rnd()*0.03,0.55,0.48+rnd()*0.12));
+    }
+    im.receiveShadow=true; mapRoot.add(im);
+  }
+  wheat(9,-21,62,20,1.3); wheat(-62,28,-24,62,1.2); wheat(-60,-60,-14,-32,1.2); wheat(22,28,62,62,1.0);
+
+  // ---- distant rolling hills + smoke from the tank battle ----
+  const hillM=[mat(0x7c8250,{roughness:1}),mat(0x6f7848,{roughness:1}),mat(0x8a8656,{roughness:1})];
+  for(let i=0;i<40;i++){ const a=rnd()*Math.PI*2, d=90+rnd()*50, g=new THREE.SphereGeometry(1,12,8); g.scale(18+rnd()*25,4+rnd()*8,14+rnd()*20); addGeo(g,hillM[i%3],Math.cos(a)*d,-1,Math.sin(a)*d,0,a,0); }
+  for(let i=0;i<60;i++){ const a=rnd()*Math.PI*2, d=78+rnd()*12; addGeo(new RoundedBoxGeometry(5,4,5,2,0.6),K.leaf[i%3],Math.cos(a)*d,2+rnd()*2,Math.sin(a)*d); }
+  flushBatch(false);
+
+  addFire(12,1.6,-4,1.2,true); addFire(25,1.6,8,1.4,true); addFire(-10,1.6,-20,1.1,false);
+  addFire(36,1.6,-11,1.0,false); addFire(-42,0,12,1.6,true); addFire(-30,0,-15,1.2,false);
+  addFire(60,0,-95,4.5,false); addFire(-40,0,-100,4,false); addFire(95,0,30,4,false); addFire(-100,0,10,3.5,false);
+}
+
+/* ================= MAPS ================= */
+const MAPS={
+  stalingrad:{id:'stalingrad',name:'Stalingrad · Winter 1942',short:'STALINGRAD',build:buildStalingrad,snow:true,tex:snowTex,
+    sky:0x8c9096,fog:[10,110],hemi:[0xd6dce4,0x5a5048,1.35],sun:[0xffe2c4,1.5]},
+  kursk:{id:'kursk',name:'Kursk · Summer 1943',short:'KURSK',build:buildKursk,snow:false,tex:grassTex,
+    sky:0xb7c7d2,fog:[22,170],hemi:[0xe4ecf2,0x6a6840,1.45],sun:[0xfff0d2,2.6]}
+};
+const MAP_ORDER=['stalingrad','kursk'];
+const WAVES_PER_MAP=5;
+let currentMap=null;
+function buildMap(id){
+  const Mp=MAPS[id];
+  // clear the old map
+  for(const c of [...mapRoot.children]){ mapRoot.remove(c); c.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); }
+  colliders.length=0; shootables.length=0; shootables.push(ground); fires.length=0; batch.clear();
+  seed=1942+MAP_ORDER.indexOf(id)*1000;
+  mapSnow=Mp.snow;
+  addBorders();
+  Mp.build();
+  // look & weather
+  scene.background.setHex(Mp.sky); scene.fog.color.setHex(Mp.sky); scene.fog.near=Mp.fog[0]; scene.fog.far=Mp.fog[1];
+  hemi.color.setHex(Mp.hemi[0]); hemi.groundColor.setHex(Mp.hemi[1]); hemi.intensity=Mp.hemi[2];
+  sun.color.setHex(Mp.sun[0]); sun.intensity=Mp.sun[1];
+  ground.material.map=Mp.tex; ground.material.needsUpdate=true;
+  try{ snow.visible=Mp.snow; }catch(e){}
+  currentMap=id;
+  const sub=document.querySelector('#menu .sub'); if(sub) sub.textContent='MAP: '+Mp.name.toUpperCase();
+}
+buildMap('stalingrad');
+
 // falling snow
 const SNOW_N=2500, snowGeo=new THREE.BufferGeometry(), snowPos=new Float32Array(SNOW_N*3);
 for(let i=0;i<SNOW_N;i++){ snowPos[i*3]=(Math.random()-.5)*60; snowPos[i*3+1]=Math.random()*25; snowPos[i*3+2]=(Math.random()-.5)*60; }
 snowGeo.setAttribute('position',new THREE.BufferAttribute(snowPos,3));
 const snow=new THREE.Points(snowGeo,new THREE.PointsMaterial({color:0xffffff,size:0.07,transparent:true,opacity:.85}));
-snow.frustumCulled=false; scene.add(snow);
+snow.frustumCulled=false; scene.add(snow); snow.visible=MAPS[currentMap].snow;
 
 /* ================= FACTIONS & WEAPONS ================= */
 const SIDES = {
@@ -1305,8 +1508,11 @@ function aiFire(s){
     if(t.isPlayer) damagePlayer(dmg,s.pos); else damageSoldier(t,dmg,s);
   }
 }
+let protectT=0; const PROTECT_TIME=5;
+function startProtection(){ protectT=PROTECT_TIME; }
 function damageSoldier(s,dmg,attacker){
   if(s.dead) return false;
+  if(protectT>0){ s.flinch=0.5; return false; }   // nobody can be hurt in the first seconds of a wave
   s.hp-=dmg; s.flinch=1; s.flinchDir=Math.random()<.5?-1:1;
   if(s.hp<=0){ killSoldier(s); return true; }
   if(attacker && s.ai && s.ai.state!=='combat'){ s.ai.state='combat'; s.ai.target=attacker; s.ai.react=0.3; s.ai.seen=true; s.ai.lastSeen.copy(targetPos(attacker)); if(s.team==='enemy') s.alertT=1.3; }
@@ -1319,7 +1525,7 @@ function killSoldier(s){
   spawnPuff(s.pos.clone().add(new V3(0,0.4,0)),0xd8d8d8,1.6);
 }
 function damagePlayer(dmg,from){
-  if(playerDead) return;
+  if(playerDead || protectT>0) return;
   playerHP-=dmg; lastHurt=0; hurtT=Math.min(1,hurtT+dmg/40);
   noise(0.08,500,0.35,'lowpass'); 
   const a=Math.atan2(from.x-player.pos.x,from.z-player.pos.z); // world angle to attacker
@@ -1329,7 +1535,7 @@ function damagePlayer(dmg,from){
 }
 function playerDies(){
   playerDead=true; state='dead'; mouseDown=rmb=false;
-  $('dead').style.display='flex'; $('deadInfo').innerHTML=`You reached wave ${wave} with ${kills} kills.<br>Your saved progress is lost: the battle starts again from wave 1.`;
+  $('dead').style.display='flex'; $('deadInfo').innerHTML=`You reached wave ${wave} with ${kills} kills.<br>Your saved progress is lost: the campaign starts again from Stalingrad, wave 1.`;
   clearSave();
   document.body.style.cursor='default';
   if(document.pointerLockElement) document.exitPointerLock();
@@ -1346,8 +1552,9 @@ function respawnPlayer(){
 
 const WAVE_SPAWNS=[[-4,-45],[0,-46],[4,-45],[-2,-48],[2,-48],[-5,-42],[5,-42],[0,-43],[-3,-40],[3,-40],[46,-46],[40,-48],[-30,-48],[-33,-46]];
 function spawnWave(){
+  startProtection();
   const enemySide = selSide==='soviet'?'german':'soviet', E=SIDES[enemySide];
-  const n=Math.min(14,4+wave*2);
+  const n=Math.min(16,4+wave*2+MAP_ORDER.indexOf(currentMap)*2);
   for(let i=0;i<n;i++){
     const p=WAVE_SPAWNS[i%WAVE_SPAWNS.length];
     const e=makeSoldier(enemySide,E.weapons[(Math.random()*2)|0],null);
@@ -1446,6 +1653,10 @@ function animateDead(s,dt){
 }
 
 function updateCombat(dt,t){
+  if(protectT>0 && state==='playing'){ protectT=Math.max(0,protectT-dt); }
+  const pe=$('protect');
+  if(protectT>0){ pe.style.opacity=1; pe.textContent=`🛡 WAVE START PROTECTION · ${Math.ceil(protectT)}  (no one can be hurt)`; }
+  else pe.style.opacity=0;
   updateGrenades(dt);
   const slots=mates.map((m,i)=>{ const o=FORM[i%FORM.length]; return new V3(player.pos.x+o.x*Math.cos(player.yaw)+o.z*Math.sin(player.yaw),0,player.pos.z-o.x*Math.sin(player.yaw)+o.z*Math.cos(player.yaw)); });
   mates.forEach((m,i)=>{ if(m.dead) animateDead(m,dt); else { updateAI(m,dt,slots[i]); animateSoldier(m,dt,t); } });
@@ -1456,7 +1667,16 @@ function updateCombat(dt,t){
   for(let i=tracers.length-1;i>=0;i--){ tracers[i].t-=dt; if(tracers[i].t<=0){ scene.remove(tracers[i].ln); tracers[i].ln.geometry.dispose(); tracers.splice(i,1); } }
   // waves
   const alive=enemies.filter(e=>!e.dead).length;
-  if(alive===0 && waveTimer<=0 && !playerDead){ waveTimer=7; playerHP=100; grenadesLeft=3; showMsg('AREA CLEAR! HEALTH & GRENADES RESTORED · NEXT WAVE INCOMING…',3); }
+  if(alive===0 && waveTimer<=0 && mapDoneT<=0 && !playerDead){
+    playerHP=100; grenadesLeft=3;
+    const W=WEAPONS[gun.type], bonus=W.mag*2;
+    gun.reserve=Math.max(gun.reserve,W.reserve)+bonus;                    // refill + bonus ammo
+    const next=MAP_ORDER[MAP_ORDER.indexOf(currentMap)+1];
+    if(wave>=WAVES_PER_MAP && next){ mapDoneT=7; showMapDone(next); }
+    else { waveTimer=7; showMsg(`WAVE ${wave} CLEARED! +${bonus} AMMO · HEALTH & GRENADES RESTORED`,3.5);
+      if(wave===WAVES_PER_MAP && !next) setTimeout(()=>showMsg('MORE MAPS COMING SOON · THE WAVES KEEP COMING',3.5),3600); }
+  }
+  if(mapDoneT>0){ mapDoneT-=dt; if(mapDoneT<=0) goToMap(MAP_ORDER[MAP_ORDER.indexOf(currentMap)+1]); }
   if(waveTimer>0){ waveTimer-=dt; if(waveTimer<=0){ wave++; spawnWave(); } }
   // player health regen + HUD
   lastHurt+=dt;
@@ -1465,7 +1685,7 @@ function updateCombat(dt,t){
   $('hpbar').style.width=playerHP+'%';
   $('hpbar').style.background=playerHP>50?'#cfd8b8':playerHP>25?'#e0b050':'#d0603c';
   const dd=$('dmgdir'); if(+dd.dataset.t>0){ dd.dataset.t=+dd.dataset.t-dt; dd.style.opacity=Math.max(0,+dd.dataset.t); }
-  $('waveInfo').textContent=`WAVE ${wave}   ENEMIES ${alive}   KILLS ${kills}`;
+  $('waveInfo').textContent=`${MAPS[currentMap].short} · WAVE ${wave}${MAP_ORDER.indexOf(currentMap)<MAP_ORDER.length-1?'/'+WAVES_PER_MAP:''}   ENEMIES ${alive}   KILLS ${kills}`;
 }
 
 /* ================= PLAYER ================= */
@@ -1618,11 +1838,10 @@ function startReload(){
 
 /* ================= SAVE GAME (stored in this browser) ================= */
 const SAVE_KEY='easternFront_save_v1';
-const MAP={id:'stalingrad',name:'Stalingrad · Winter 1942'};
-function readSave(){ try{ const t=localStorage.getItem(SAVE_KEY); if(!t) return null; const d=JSON.parse(t); return (d && SIDES[d.side] && WEAPONS[d.weapon]) ? d : null; }catch(e){ return null; } }
+function readSave(){ try{ const t=localStorage.getItem(SAVE_KEY); if(!t) return null; const d=JSON.parse(t); if(d && !MAPS[d.map]) d.map='stalingrad'; return (d && SIDES[d.side] && WEAPONS[d.weapon]) ? d : null; }catch(e){ return null; } }
 function writeSave(silent){
   try{
-    localStorage.setItem(SAVE_KEY,JSON.stringify({map:MAP.id,mapName:MAP.name,side:selSide,weapon:gun.type,wave,kills,savedAt:Date.now()}));
+    localStorage.setItem(SAVE_KEY,JSON.stringify({map:currentMap,mapName:MAPS[currentMap].name,reserve:gun.reserve,side:selSide,weapon:gun.type,wave,kills,savedAt:Date.now()}));
     if(!silent) showMsg('GAME SAVED · WAVE '+wave,1.6);
     return true;
   }catch(e){ if(!silent) showMsg('COULD NOT SAVE (browser storage is blocked)',2.5); return false; }
@@ -1637,16 +1856,46 @@ function refreshContinue(){
 function continueGame(){
   const d=readSave(); if(!d) return;
   selSide=d.side; selWeapon=d.weapon;
+  if(currentMap!==d.map){ clearSoldiers(); buildMap(d.map); visCols=null; }
   startGame();
   kills=d.kills||0;
+  if(d.reserve) gun.reserve=Math.max(gun.reserve,d.reserve);
   if(d.wave>1){
     for(const e of enemies){ scene.remove(e.root); const i=shootables.indexOf(e.root); if(i>=0) shootables.splice(i,1); }
     enemies=[]; wave=d.wave; spawnWave();
   }
 }
 
+
+/* ================= MAP PROGRESSION ================= */
+let mapDoneT=0;
+function showMapDone(next){
+  const el=$('mapdone');
+  el.innerHTML=`<div style="font-size:44px;letter-spacing:6px">${MAPS[currentMap].short} SECURED!</div>
+    <div style="margin-top:10px;font-size:18px;opacity:.85">${WAVES_PER_MAP} waves survived · ${kills} kills</div>
+    <div style="margin-top:22px;font-size:20px;letter-spacing:3px">NEXT: ${MAPS[next].name.toUpperCase()}</div>`;
+  el.style.opacity=1;
+}
+function goToMap(id){
+  if(!id) return;
+  startProtection();
+  for(const g of grenades) scene.remove(g.m); grenades.length=0;
+  for(const t of tracers) scene.remove(t.ln); tracers.length=0;
+  clearSoldiers();
+  buildMap(id);
+  visCols=null; holes.count=0; holeIdx=0;
+  spawnWorld(selSide,gun.type,false);
+  Object.assign(player,{pos:SPAWN.clone(),vel:new V3(),yaw:0,pitch:0,crouch:false});
+  playerHP=100; grenadesLeft=3; wave=1; waveTimer=0;
+  $('mapdone').style.opacity=0;
+  showMsg(`${MAPS[id].name.toUpperCase()} · WAVE 1`,3.5);
+  $('side').textContent=SIDES[selSide].title+' · '+WEAPONS[gun.type].name+' · '+MAPS[id].short;
+  writeSave(true);
+}
+
 /* ================= GAME FLOW ================= */
 function startGame(){
+  startProtection();
   spawnWorld(selSide,selWeapon,false);
   Object.assign(player,{pos:SPAWN.clone(),vel:new V3(),yaw:0,pitch:0,onGround:true,crouch:false,eye:1.62,stamina:1,landDip:0,recoilAcc:0});
   const W=WEAPONS[selWeapon];
@@ -1654,10 +1903,10 @@ function startGame(){
   buildViewmodel(selSide,selWeapon);
   wave=1; kills=0; waveTimer=0; grenadesLeft=3; throwT=0; throwCD=0; shakeT=0;
   for(const g of grenades) scene.remove(g.m); grenades.length=0;
-  holes.count=0; holeIdx=0;
+  holes.count=0; holeIdx=0; mapDoneT=0; $('mapdone').style.opacity=0;
   playerHP=100; hurtT=0; lastHurt=99; playerDead=false; $('dead').style.display='none';
   $('menu').style.display='none'; $('hud').style.display='block';
-  $('side').textContent=SIDES[selSide].title+' · '+W.name;
+  $('side').textContent=SIDES[selSide].title+' · '+W.name+' · '+MAPS[currentMap].short;
   $('side').style.color=SIDES[selSide].color;
   state='paused'; $('pause').style.display='flex';
   buildCrosshair();
@@ -1696,13 +1945,15 @@ addEventListener('mousemove',e=>{ mouseX=e.clientX; });
 $('deploy').onclick=()=>{
   const d=readSave();
   if(d && d.wave>1 && !confirm(`Start a new game? Your saved game (wave ${d.wave}) will be replaced.`)) return;
-  initAudio(); startGame(); writeSave(true); lockPointer();
+  initAudio();
+  if(currentMap!=='stalingrad'){ clearSoldiers(); buildMap('stalingrad'); visCols=null; }
+  startGame(); writeSave(true); lockPointer();
 };
 $('continueBtn').onclick=()=>{ initAudio(); continueGame(); lockPointer(); };
 $('deleteSave').onclick=()=>{ clearSave(); refreshContinue(); };
 $('saveBtn').onclick=()=>{ writeSave(false); };
 $('resume').onclick=()=>{ initAudio(); lockPointer(); };
-$('respawnBtn').onclick=()=>{ initAudio(); startGame(); lockPointer(); };
+$('respawnBtn').onclick=()=>{ initAudio(); if(currentMap!=='stalingrad'){ clearSoldiers(); buildMap('stalingrad'); visCols=null; } startGame(); lockPointer(); };
 $('deadMenu').onclick=()=>{ playerDead=false; $('dead').style.display='none'; $('toMenu').onclick(); };
 $('toMenu').onclick=()=>{
   refreshContinue();
