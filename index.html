@@ -77,7 +77,7 @@
   <button id="deploy" class="big">NEW GAME</button>
   <button id="deleteSave" style="display:none;margin-top:8px;background:none;border:none;color:#a99;cursor:pointer;font:13px 'Courier New'">delete saved game</button>
   <div class="controls">
-    WASD move · Mouse look · Shift sprint · Space jump · C crouch (hold)<br>
+    WASD move · Mouse look · Shift sprint · Space jump · C crouch (toggle)<br>
     Left click fire · Right click / Q aim · G grenade · R reload · Arrow keys also turn · Esc pause
   </div>
 </div>
@@ -1542,7 +1542,7 @@ function playerDies(){
 }
 function respawnPlayer(){
   playerDead=false; playerHP=100; hurtT=0; lastHurt=99;
-  Object.assign(player,{pos:SPAWN.clone(),vel:new V3(),yaw:0,pitch:0,crouch:false});
+  Object.assign(player,{pos:SPAWN.clone(),vel:new V3(),yaw:0,pitch:0,crouch:false,crouchToggle:false});
   const W=WEAPONS[gun.type]; gun.ammo=W.mag; gun.reserve=Math.max(gun.reserve,W.reserve); gun.reloading=0; grenadesLeft=3;
   $('dead').style.display='none';
   // push enemies that were camping the spawn back up the street
@@ -1747,12 +1747,42 @@ let msgTimer=0;
 function showMsg(t,d=1.6){ $('msg').textContent=t; $('msg').style.opacity=1; msgTimer=d; }
 let hitTimer=0;
 
-/* ================= AUDIO (generated, no files needed) ================= */
-let actx=null, noiseBuf=null;
+/* ================= AUDIO (pre-built sounds for instant, low-latency playback) ================= */
+let actx=null, noiseBuf=null, master=null; const SB={};
 function initAudio(){
-  if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return; } }
-  if(actx.state==='suspended') actx.resume();
-  if(!noiseBuf){ noiseBuf=actx.createBuffer(1,actx.sampleRate*0.6,actx.sampleRate); const d=noiseBuf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1; }
+  if(!actx){
+    try{ actx=new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'}); }catch(e){ return; }
+    master=actx.createDynamicsCompressor(); master.threshold.value=-10; master.knee.value=6; master.ratio.value=4;
+    master.attack.value=0.002; master.release.value=0.15; master.connect(actx.destination);
+    noiseBuf=actx.createBuffer(1,actx.sampleRate*0.6,actx.sampleRate); const d=noiseBuf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+    buildSounds();
+  }
+  if(actx.state!=='running') actx.resume();
+}
+// synthesise each sound ONCE into a buffer, so firing only has to press "play"
+function synth(dur,fn){ const sr=actx.sampleRate, n=Math.floor(sr*dur), b=actx.createBuffer(1,n,sr), d=b.getChannelData(0); fn(d,sr,n);
+  let pk=0; for(let i=0;i<n;i++) pk=Math.max(pk,Math.abs(d[i])); if(pk>0) for(let i=0;i<n;i++) d[i]/=pk; return b; }
+function gunshot(dur,decay,f0,f1,thump,thumpF){
+  return synth(dur,(d,sr,n)=>{ let y=0,y2=0,ph=0;
+    for(let i=0;i<n;i++){ const t=i/sr, fc=f1+(f0-f1)*Math.exp(-t*14), a=1-Math.exp(-2*Math.PI*fc/sr);
+      const x=Math.random()*2-1; y+=a*(x-y); y2+=a*(y-y2);
+      const crack = t<0.006 ? x*(1-t/0.006)*1.2 : 0;
+      ph+=2*Math.PI*(thumpF*Math.exp(-t*12)+35)/sr;
+      d[i]=(y2*1.6+crack)*Math.exp(-t*decay) + Math.sin(ph)*thump*Math.exp(-t*22); } });
+}
+function buildSounds(){
+  SB.rifle=gunshot(0.6,7,3200,260,0.9,120);
+  SB.smg=gunshot(0.28,16,4200,320,0.6,170);
+  SB.click=synth(0.045,(d,sr,n)=>{ let y=0; for(let i=0;i<n;i++){ const t=i/sr,x=Math.random()*2-1; y+=0.5*(x-y); d[i]=(x-y)*Math.exp(-t*110); } });
+  SB.whizz=synth(0.16,(d,sr,n)=>{ let y=0; for(let i=0;i<n;i++){ const t=i/sr,x=Math.random()*2-1,a=0.25+0.5*(t/0.16); y+=a*(x-y); d[i]=(x-y)*Math.sin(Math.PI*t/0.16); } });
+  SB.step=synth(0.09,(d,sr,n)=>{ let y=0; for(let i=0;i<n;i++){ const t=i/sr,x=Math.random()*2-1; y+=0.12*(x-y); d[i]=y*Math.exp(-t*45); } });
+  SB.land=synth(0.2,(d,sr,n)=>{ let y=0,ph=0; for(let i=0;i<n;i++){ const t=i/sr,x=Math.random()*2-1; y+=0.05*(x-y); ph+=2*Math.PI*(90-200*t)/sr; d[i]=(y*2+Math.sin(ph)*0.6)*Math.exp(-t*20); } });
+}
+function play(buf,vol=1,rate=1,delay=0){
+  if(!actx || !buf || vol<0.01) return;
+  const src=actx.createBufferSource(); src.buffer=buf; src.playbackRate.value=rate*(0.95+Math.random()*0.1);
+  const g=actx.createGain(); g.gain.value=vol; src.connect(g).connect(master);
+  src.start(actx.currentTime+delay);
 }
 function noise(dur,freq,vol,type='lowpass',endFreq=null,delay=0){
   if(!actx) return; const t=actx.currentTime+delay;
@@ -1760,19 +1790,22 @@ function noise(dur,freq,vol,type='lowpass',endFreq=null,delay=0){
   const f=actx.createBiquadFilter(); f.type=type; f.frequency.setValueAtTime(freq,t);
   if(endFreq) f.frequency.exponentialRampToValueAtTime(endFreq,t+dur);
   const g=actx.createGain(); g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
-  src.connect(f).connect(g).connect(actx.destination); src.start(t); src.stop(t+dur+0.05);
+  src.connect(f).connect(g).connect(master); src.start(t); src.stop(t+dur+0.05);
 }
 function tone(f0,f1,dur,vol,type='sine',delay=0){
   if(!actx) return; const t=actx.currentTime+delay;
   const o=actx.createOscillator(); o.type=type; o.frequency.setValueAtTime(f0,t); o.frequency.exponentialRampToValueAtTime(f1,t+dur);
   const g=actx.createGain(); g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
-  o.connect(g).connect(actx.destination); o.start(t); o.stop(t+dur+0.05);
+  o.connect(g).connect(master); o.start(t); o.stop(t+dur+0.05);
 }
-const sndShot=(h,v=1)=>{ if(v<0.02) return; noise(h?0.5:0.22,(h?2600:3600)*(0.5+v*0.5),(h?0.9:0.55)*v,'lowpass',300); tone(h?120:170,40,0.18,(h?0.7:0.4)*v); };
-const sndWhizz=()=>{ noise(0.12,3000+Math.random()*2000,0.12,'bandpass',800); };
-const sndClick=(d=0,f=2200,v=0.2)=>{ noise(0.04,f,v,'bandpass',null,d); };
-const sndStep=sprint=>noise(0.09,700+Math.random()*300,sprint?0.12:0.08,'bandpass');
-const sndLand=()=>{ noise(0.15,400,0.2,'lowpass'); tone(90,40,0.12,0.25); };
+const sndShot=(h,v=1)=>play(h?SB.rifle:SB.smg,(h?0.95:0.7)*v);
+const sndWhizz=()=>play(SB.whizz,0.25,0.8+Math.random()*0.5);
+const sndClick=(d=0,f=2200,v=0.2)=>play(SB.click,v*1.6,f/2000,d);
+const sndStep=sprint=>play(SB.step,sprint?0.35:0.22,0.8+Math.random()*0.4);
+const sndLand=()=>play(SB.land,0.5);
+// keep the audio engine awake (browsers can suspend it)
+addEventListener('mousedown',()=>{ if(actx && actx.state!=='running') actx.resume(); });
+addEventListener('keydown',()=>{ if(actx && actx.state!=='running') actx.resume(); });
 
 /* ================= INPUT ================= */
 const keys={}; let mouseDown=false, rmb=false, jumpQueued=false;
@@ -1782,6 +1815,7 @@ addEventListener('keydown',e=>{
   if(state!=='playing') return;
   if(e.code==='Space'){ jumpQueued=true; e.preventDefault(); }
   if(e.code==='KeyR') startReload();
+  if(e.code==='KeyC' && !e.repeat) player.crouchToggle=!player.crouchToggle;
   if(e.code==='KeyG') throwGrenade();
 });
 addEventListener('keyup',e=>{ keys[e.code]=false; });
@@ -1885,7 +1919,7 @@ function goToMap(id){
   buildMap(id);
   visCols=null; holes.count=0; holeIdx=0;
   spawnWorld(selSide,gun.type,false);
-  Object.assign(player,{pos:SPAWN.clone(),vel:new V3(),yaw:0,pitch:0,crouch:false});
+  Object.assign(player,{pos:SPAWN.clone(),vel:new V3(),yaw:0,pitch:0,crouch:false,crouchToggle:false});
   playerHP=100; grenadesLeft=3; wave=1; waveTimer=0;
   $('mapdone').style.opacity=0;
   showMsg(`${MAPS[id].name.toUpperCase()} · WAVE 1`,3.5);
@@ -1897,7 +1931,7 @@ function goToMap(id){
 function startGame(){
   startProtection();
   spawnWorld(selSide,selWeapon,false);
-  Object.assign(player,{pos:SPAWN.clone(),vel:new V3(),yaw:0,pitch:0,onGround:true,crouch:false,eye:1.62,stamina:1,landDip:0,recoilAcc:0});
+  Object.assign(player,{pos:SPAWN.clone(),vel:new V3(),yaw:0,pitch:0,onGround:true,crouch:false,crouchToggle:false,eye:1.62,stamina:1,landDip:0,recoilAcc:0});
   const W=WEAPONS[selWeapon];
   Object.assign(gun,{type:selWeapon,ammo:W.mag,reserve:W.reserve,cooldown:0,reloading:0,bolt:0,ads:0,kick:0,flash:0,sprintT:0});
   buildViewmodel(selSide,selWeapon);
@@ -2029,7 +2063,10 @@ function updatePlayer(dt){
   if(wish.lengthSq()>0) wish.normalize();
 
   // crouch (can't stand up under something)
-  const wantCrouch=!!keys.KeyC;
+  // C toggles crouch; sprinting or jumping stands you back up
+  if(P.crouchToggle && (keys.ShiftLeft||keys.ShiftRight) && (f!==0||s!==0)) P.crouchToggle=false;
+  if(P.crouchToggle && jumpQueued){ P.crouchToggle=false; jumpQueued=false; }
+  const wantCrouch=!!P.crouchToggle;
   if(wantCrouch) P.crouch=true;
   else if(P.crouch && !blocked(P.pos,P.R,STAND_H)) P.crouch=false;
 
