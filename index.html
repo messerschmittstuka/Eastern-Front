@@ -60,7 +60,7 @@
   html,body{touch-action:none;-webkit-user-select:none;-webkit-touch-callout:none}
   #touchUI{position:fixed;inset:0;z-index:6;display:none;--u:min(1vh,0.55vw)}
   #lookZone{position:absolute;top:0;bottom:0;right:0;width:58%}
-  #leftZone{position:absolute;top:18%;bottom:0;left:0;width:42%}
+  #leftZone{position:absolute;top:32%;bottom:0;left:0;width:42%}
   #joy{position:absolute;left:calc(6vw + env(safe-area-inset-left));bottom:8vh;width:calc(36*var(--u));height:calc(36*var(--u));
        border-radius:50%;background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.35);pointer-events:none;opacity:.55}
   #joy.on{opacity:1}
@@ -80,15 +80,15 @@
   #tReload{right:calc(2vw + 18*var(--u) + env(safe-area-inset-right));bottom:calc(36*var(--u));width:calc(13*var(--u));height:calc(13*var(--u));font-size:calc(2.6*var(--u))}
   #tNade{right:calc(2vw + 42*var(--u) + env(safe-area-inset-right));bottom:calc(24*var(--u));width:calc(13*var(--u));height:calc(13*var(--u))}
   #tCrouch{right:calc(2vw + 42*var(--u) + env(safe-area-inset-right));bottom:calc(6*var(--u));width:calc(14*var(--u));height:calc(14*var(--u));font-size:calc(2.6*var(--u))}
-  #tPause{left:50%;top:calc(2*var(--u));transform:translateX(-50%);width:calc(10*var(--u));height:calc(10*var(--u));border-radius:30%}
-  #tPause.down{transform:translateX(-50%) scale(.94)}
+  #tPause{right:calc(2vw + env(safe-area-inset-right));top:calc(2*var(--u));width:calc(10*var(--u));height:calc(10*var(--u));border-radius:30%}
   #rotate{display:none;position:fixed;inset:0;z-index:50;background:#111;color:#e8e2d0;align-items:center;justify-content:center;text-align:center;font-size:22px;line-height:1.8}
   @media (orientation:portrait){ body.touch #rotate{display:flex} }
-  body.touch #stamwrap{left:auto;right:auto;left:50%;transform:translateX(-50%);bottom:auto;top:calc(14*min(1vh,.55vw));width:160px;font-size:11px}
-  body.touch #ammo{right:auto;left:calc(2vw + env(safe-area-inset-left));bottom:auto;top:44px}
-  body.touch #ammo .n{font-size:26px}
-  body.touch #side{font-size:12px;top:10px;left:calc(2vw + env(safe-area-inset-left))}
-  body.touch #waveInfo{font-size:12px;top:10px;right:calc(2vw + env(safe-area-inset-right))}
+  body.touch #side{font-size:11px;top:8px;left:calc(2vw + env(safe-area-inset-left))}
+  body.touch #stamwrap{left:calc(2vw + env(safe-area-inset-left));top:26px;bottom:auto;width:150px;font-size:10px;line-height:1.1}
+  body.touch #hpwrap{height:7px;margin:2px 0 4px} body.touch #stambar{height:5px;margin-top:2px}
+  body.touch #ammo{right:auto;left:calc(2vw + env(safe-area-inset-left));bottom:auto;top:82px;text-align:left}
+  body.touch #ammo .n{font-size:17px} body.touch #ammo .w{font-size:10px}
+  body.touch #waveInfo{font-size:11px;top:8px;right:auto;left:50%;transform:translateX(-50%);white-space:nowrap}
   body.touch .controls{display:none}
   @media (max-height:560px){
     #menu{justify-content:safe center;overflow-y:auto;padding:10px 0}
