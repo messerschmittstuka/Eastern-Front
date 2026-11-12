@@ -59,7 +59,7 @@
 
 <div id="menu" class="overlay">
   <h1>EASTERN FRONT</h1>
-  <div class="sub">1942 · INFANTRY PROTOTYPE</div>
+  <div class="sub">MAP: STALINGRAD · WINTER 1942</div>
   <div class="sides">
     <div class="card sel" data-side="soviet">
       <h2>RED ARMY</h2>
@@ -71,7 +71,9 @@
     </div>
   </div>
   <div id="weapons"></div>
-  <button id="deploy" class="big">DEPLOY</button>
+  <button id="continueBtn" class="big" style="display:none"></button>
+  <button id="deploy" class="big">NEW GAME</button>
+  <button id="deleteSave" style="display:none;margin-top:8px;background:none;border:none;color:#a99;cursor:pointer;font:13px 'Courier New'">delete saved game</button>
   <div class="controls">
     WASD move · Mouse look · Shift sprint · Space jump · C crouch (hold)<br>
     Left click fire · Right click / Q aim · G grenade · R reload · Arrow keys also turn · Esc pause
@@ -81,13 +83,14 @@
 <div id="pause" class="overlay">
   <h2>PAUSED</h2>
   <button id="resume" class="big">CLICK TO PLAY</button>
+  <button id="saveBtn" class="big">SAVE GAME</button>
   <button id="toMenu" class="big">MAIN MENU</button>
 </div>
 
 <div id="dead" class="overlay" style="display:none;background:rgba(10,10,12,.72);z-index:12">
   <h2 style="font-size:42px;letter-spacing:6px;margin:0">YOU WERE KNOCKED OUT</h2>
   <div id="deadInfo" style="margin:12px 0 20px;opacity:.8"></div>
-  <button id="respawnBtn" class="big">RESPAWN</button>
+  <button id="respawnBtn" class="big">RESTART FROM WAVE 1</button>
   <button id="deadMenu" class="big">MAIN MENU</button>
 </div>
 <div id="hud">
@@ -1326,7 +1329,8 @@ function damagePlayer(dmg,from){
 }
 function playerDies(){
   playerDead=true; state='dead'; mouseDown=rmb=false;
-  $('dead').style.display='flex'; $('deadInfo').textContent=`Wave ${wave} · ${kills} enemies defeated`;
+  $('dead').style.display='flex'; $('deadInfo').innerHTML=`You reached wave ${wave} with ${kills} kills.<br>Your saved progress is lost: the battle starts again from wave 1.`;
+  clearSave();
   document.body.style.cursor='default';
   if(document.pointerLockElement) document.exitPointerLock();
 }
@@ -1359,7 +1363,8 @@ function spawnWave(){
     m.pos.set(SPAWN.x+(Math.random()-.5)*4,0,SPAWN.z+4); initAI(m,'ally','follow');
     scene.add(m.root); shootables.push(m.root); mates.push(m);
   }
-  showMsg(`WAVE ${wave} · ${n} ENEMIES ADVANCING`,3);
+  showMsg(`WAVE ${wave} · ${n} ENEMIES ADVANCING · GAME SAVED`,3);
+  writeSave(true);
 }
 
 function updateAI(s,dt,slot){
@@ -1611,6 +1616,35 @@ function startReload(){
   sndClick(0.35,1200,0.25); sndClick(W.reload*0.6,1500,0.25); sndClick(W.reload-0.25,2100,0.3);
 }
 
+/* ================= SAVE GAME (stored in this browser) ================= */
+const SAVE_KEY='easternFront_save_v1';
+const MAP={id:'stalingrad',name:'Stalingrad · Winter 1942'};
+function readSave(){ try{ const t=localStorage.getItem(SAVE_KEY); if(!t) return null; const d=JSON.parse(t); return (d && SIDES[d.side] && WEAPONS[d.weapon]) ? d : null; }catch(e){ return null; } }
+function writeSave(silent){
+  try{
+    localStorage.setItem(SAVE_KEY,JSON.stringify({map:MAP.id,mapName:MAP.name,side:selSide,weapon:gun.type,wave,kills,savedAt:Date.now()}));
+    if(!silent) showMsg('GAME SAVED · WAVE '+wave,1.6);
+    return true;
+  }catch(e){ if(!silent) showMsg('COULD NOT SAVE (browser storage is blocked)',2.5); return false; }
+}
+function clearSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
+function refreshContinue(){
+  const d=readSave(), b=$('continueBtn');
+  if(d){ b.style.display='block'; $('deleteSave').style.display='block';
+    b.innerHTML=`CONTINUE<div style="font-size:13px;letter-spacing:1px;margin-top:4px;opacity:.8">${d.mapName||'Stalingrad'} · ${SIDES[d.side].title} · ${WEAPONS[d.weapon].name} · WAVE ${d.wave} · ${d.kills} KILLS</div>`; }
+  else { b.style.display='none'; $('deleteSave').style.display='none'; }
+}
+function continueGame(){
+  const d=readSave(); if(!d) return;
+  selSide=d.side; selWeapon=d.weapon;
+  startGame();
+  kills=d.kills||0;
+  if(d.wave>1){
+    for(const e of enemies){ scene.remove(e.root); const i=shootables.indexOf(e.root); if(i>=0) shootables.splice(i,1); }
+    enemies=[]; wave=d.wave; spawnWave();
+  }
+}
+
 /* ================= GAME FLOW ================= */
 function startGame(){
   spawnWorld(selSide,selWeapon,false);
@@ -1620,6 +1654,7 @@ function startGame(){
   buildViewmodel(selSide,selWeapon);
   wave=1; kills=0; waveTimer=0; grenadesLeft=3; throwT=0; throwCD=0; shakeT=0;
   for(const g of grenades) scene.remove(g.m); grenades.length=0;
+  holes.count=0; holeIdx=0;
   playerHP=100; hurtT=0; lastHurt=99; playerDead=false; $('dead').style.display='none';
   $('menu').style.display='none'; $('hud').style.display='block';
   $('side').textContent=SIDES[selSide].title+' · '+W.name;
@@ -1658,11 +1693,21 @@ document.addEventListener('pointerlockchange',()=>{
 function pauseGame(){ state='paused'; $('pause').style.display='flex'; mouseDown=rmb=false; document.body.style.cursor='default'; }
 addEventListener('keydown',e=>{ if(e.code==='Escape' && state==='playing' && cursorMode) pauseGame(); });
 addEventListener('mousemove',e=>{ mouseX=e.clientX; });
-$('deploy').onclick=()=>{ initAudio(); startGame(); lockPointer(); };
+$('deploy').onclick=()=>{
+  const d=readSave();
+  if(d && d.wave>1 && !confirm(`Start a new game? Your saved game (wave ${d.wave}) will be replaced.`)) return;
+  initAudio(); startGame(); writeSave(true); lockPointer();
+};
+$('continueBtn').onclick=()=>{ initAudio(); continueGame(); lockPointer(); };
+$('deleteSave').onclick=()=>{ clearSave(); refreshContinue(); };
+$('saveBtn').onclick=()=>{ writeSave(false); };
 $('resume').onclick=()=>{ initAudio(); lockPointer(); };
-$('respawnBtn').onclick=()=>{ initAudio(); respawnPlayer(); };
+$('respawnBtn').onclick=()=>{ initAudio(); startGame(); lockPointer(); };
 $('deadMenu').onclick=()=>{ playerDead=false; $('dead').style.display='none'; $('toMenu').onclick(); };
 $('toMenu').onclick=()=>{
+  refreshContinue();
+  document.querySelectorAll('.card').forEach(c=>c.classList.toggle('sel',c.dataset.side===selSide));
+  renderWeaponButtons();
   state='menu'; $('pause').style.display='none'; document.body.style.cursor='default'; $('hud').style.display='none'; $('menu').style.display='flex';
   spawnWorld(selSide,selWeapon,true);
 };
@@ -1686,7 +1731,7 @@ renderWeaponButtons();
 spawnWorld(selSide,selWeapon,true);
 $('deploy').disabled=true; $('loading').textContent='Loading soldiers…';
 await loadCharacters();
-$('loading').remove(); $('deploy').disabled=false;
+$('loading').remove(); $('deploy').disabled=false; refreshContinue();
 spawnWorld(selSide,selWeapon,true);
 
 // crosshair (spreads with movement)
