@@ -99,6 +99,19 @@
     #pause h2,#dead h2{font-size:26px!important}
     #msg{font-size:15px} #mapdone div{font-size:24px!important}
   }
+  /* menus never squash/overlap: they centre when they fit and scroll when they don't */
+  .overlay{justify-content:flex-start!important;overflow-y:auto;touch-action:pan-y;-webkit-overflow-scrolling:touch}
+  .overlay > *{flex-shrink:0}
+  .overlay > :first-child{margin-top:auto!important}
+  .overlay > :last-child{margin-bottom:auto!important}
+  #menuBtns{display:flex;gap:14px;align-items:stretch;justify-content:center;flex-wrap:wrap;margin-top:6px}
+  #menuBtns button.big{margin-top:0}
+  @media (max-height:560px){
+    #menu{padding:8px 0 14px}
+    .wbtn span{display:none}
+    #menuBtns{gap:10px}
+    #continueBtn div{font-size:10px!important}
+  }
   #err{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:#111;color:#e88;font-size:18px;padding:40px;text-align:center;z-index:99}
 </style>
 </head>
@@ -118,8 +131,10 @@
     </div>
   </div>
   <div id="weapons"></div>
-  <button id="continueBtn" class="big" style="display:none"></button>
-  <button id="deploy" class="big">NEW GAME</button>
+  <div id="menuBtns">
+    <button id="continueBtn" class="big" style="display:none"></button>
+    <button id="deploy" class="big">NEW GAME</button>
+  </div>
   <button id="deleteSave" style="display:none;margin-top:8px;background:none;border:none;color:#a99;cursor:pointer;font:13px 'Courier New'">delete saved game</button>
   <div class="controls">
     WASD move · Mouse look · Shift sprint · Space jump · C crouch (toggle)<br>
