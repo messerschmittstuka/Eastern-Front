@@ -87,6 +87,9 @@
   #tNade{right:calc(2vw + 42*var(--u) + env(safe-area-inset-right));bottom:calc(24*var(--u));width:calc(13*var(--u));height:calc(13*var(--u))}
   #tCrouch{right:calc(2vw + 42*var(--u) + env(safe-area-inset-right));bottom:calc(6*var(--u));width:calc(14*var(--u));height:calc(14*var(--u));font-size:calc(2.6*var(--u))}
   #tPause{right:calc(2vw + env(safe-area-inset-right));top:calc(2*var(--u));width:calc(10*var(--u));height:calc(10*var(--u));border-radius:30%}
+  #tSquad{right:calc(2vw + 13*var(--u) + env(safe-area-inset-right));top:calc(2*var(--u));width:calc(14*var(--u));height:calc(10*var(--u));border-radius:20%;font-size:calc(2.4*var(--u))}
+  body.tankmode #tSquad{display:none}
+  #sqMode{margin-top:6px;font-size:12px;opacity:.85;letter-spacing:1px}
   #rotate{display:none;position:fixed;inset:0;z-index:50;background:#111;color:#e8e2d0;align-items:center;justify-content:center;text-align:center;font-size:22px;line-height:1.8}
   @media (orientation:portrait){ body.touch #rotate{display:flex} }
   body.touch #side{font-size:11px;top:8px;left:calc(2vw + env(safe-area-inset-left))}
@@ -302,7 +305,7 @@
   <div id="dmgdir"></div>
   <div id="waveInfo"></div>
   <div id="objBox"><div id="objTxt"></div><div id="objBar"><div id="objFill"></div></div></div>
-  <div id="stamwrap"><span id="hpLabel">HEALTH</span><div id="hpwrap"><div id="hpbar"></div></div><span id="stLabel">STAMINA</span><div id="stambar"><div id="stam"></div></div></div>
+  <div id="stamwrap"><span id="hpLabel">HEALTH</span><div id="hpwrap"><div id="hpbar"></div></div><span id="stLabel">STAMINA</span><div id="stambar"><div id="stam"></div></div><div id="sqMode"></div></div>
   <div id="scope"><i class="h"></i><i class="v"></i></div>
   <div id="tankSight"><i class="h"></i><i class="v"></i><i class="c1"></i><i class="c2"></i><i class="c3"></i></div>
   <div id="gunMark"></div>
@@ -321,6 +324,7 @@
   <div class="tbtn" id="tNade">NADE<small>3</small></div>
   <div class="tbtn" id="tCrouch">CROUCH</div>
   <div class="tbtn" id="tPause">II</div>
+  <div class="tbtn" id="tSquad">FREE<small>SQUAD</small></div>
 </div>
 <div id="rotate">↻<br>Turn your phone sideways<br><span style="font-size:14px;opacity:.7">This game is played in landscape</span></div>
 <div id="err"></div>
@@ -2052,6 +2056,8 @@ function spawnWorld(side,weapon,withAvatar){
     const o=FORM[i];
     m.pos.set(SPAWN.x+o.x*Math.cos(yaw)+o.z*Math.sin(yaw),0,SPAWN.z-o.x*Math.sin(yaw)+o.z*Math.cos(yaw));
     m.heading=yaw; initAI(m,'ally','follow'); scene.add(m.root); shootables.push(m.root); mates.push(m);
+    m.role = i%2===0 ? 'push' : 'hold';                                  // free roam: half advance, half hold and cover
+    m.home = m.pos.clone().add(new V3((Math.random()-.5)*7,0,(Math.random()-.5)*5)); m.anchor=m.home.clone(); m.anchorT=Math.random()*2;
   }
   const posts=patrolPosts();
   for(let i=0;i<posts.length;i++){
@@ -2521,6 +2527,37 @@ function aiThrowGrenade(s,tp){
 }
 function friendsNear(s,p,r){ const list=s.team==='ally'?[...mates,(playerDead?null:playerTarget)]:enemies; for(const o of list){ if(!o || o===s || o.dead) continue; const op=o.isPlayer?player.pos:o.pos; if(Math.hypot(op.x-p.x,op.z-p.z)<r) return true; } return false; }
 
+// ---------- squad orders: follow me / free roam ----------
+let squadMode='free';
+const DEFENSIVE=()=>berlinDefend() || (currentMap==='moscow' && moscowPhase===2);
+function freeAnchor(m,dt){
+  m.anchorT-=dt; if(m.anchorT>0 && m.anchor) return m.anchor; m.anchorT=2.5+Math.random()*2;
+  if(!m.home) m.home=m.pos.clone();
+  // nearest living enemy this soldier knows about
+  let best=null, bd=1e9; for(const e of enemies){ if(e.dead) continue; const d=Math.hypot(e.pos.x-m.pos.x,e.pos.z-m.pos.z); if(d<bd){ bd=d; best=e; } }
+  if(m.role==='push' && best){
+    const dx=best.pos.x-m.pos.x, dz=best.pos.z-m.pos.z, len=Math.hypot(dx,dz)||1, step=Math.min(10,Math.max(0,len-12));
+    let a=new V3(m.pos.x+dx/len*step+(Math.random()-.5)*4,0,m.pos.z+dz/len*step+(Math.random()-.5)*4);
+    if(DEFENSIVE()){ const c=SPAWN; const r=Math.hypot(a.x-c.x,a.z-c.z); if(r>18){ a.x=c.x+(a.x-c.x)/r*18; a.z=c.z+(a.z-c.z)/r*18; } }  // don't wander off the position you're defending
+    a.x=Math.max(-L+4,Math.min(L-4,a.x)); a.z=Math.max(-L+4,Math.min(L-4,a.z));
+    if(blocked(a,0.35,1.7)) a=m.pos.clone();
+    m.anchor=a; m.lookYaw=Math.atan2(-dx,-dz);
+  } else {
+    m.anchor=m.home.clone().add(new V3((Math.random()-.5)*4,0,(Math.random()-.5)*4)); if(blocked(m.anchor,0.35,1.7)) m.anchor=m.home.clone();
+    if(best) m.lookYaw=Math.atan2(-(best.pos.x-m.pos.x),-(best.pos.z-m.pos.z));
+  }
+  return m.anchor;
+}
+function toggleSquadMode(){
+  if(state!=='playing' || isTankMap() || isDuel() || coopGuest()) return;
+  squadMode = squadMode==='free' ? 'follow' : 'free';
+  if(squadMode==='free') for(const m of mates){ m.home=m.pos.clone(); m.anchorT=0; }
+  showMsg(squadMode==='free'?'SQUAD: FREE ROAM · some push forward, some hold and cover':'SQUAD: FOLLOW ME',1.8);
+  squadShout(squadMode==='free'?'forward':'cover',true);
+  updateSquadLabel();
+}
+function updateSquadLabel(){ $('sqMode').textContent = isTankMap()||isDuel() ? '' : `SQUAD: ${squadMode==='free'?'FREE ROAM':'FOLLOW ME'}${IS_TOUCH?'':' (F)'}`;
+  $('tSquad').firstChild.textContent = squadMode==='free'?'FREE':'FOLLOW'; }
 function updateAI(s,dt,slot){
   const ai=s.ai;
   ai.thinkT-=dt; if(ai.thinkT<=0){ ai.thinkT=0.3; aiThink(s); }
@@ -2575,7 +2612,9 @@ function updateAI(s,dt,slot){
       const hiding = !ai.seen || (ai.target.isPlayer ? player.crouch : (ai.target.crouchK||0)>0.5);
       if(d>8 && d<24 && hiding && Math.random()<0.45 && !friendsNear(s,lp,6)) aiThrowGrenade(s,lp);
     }
-  } else if(ai.state==='follow' && slot){ mx=slot.x; mz=slot.z; spd=6.8; s.wantCrouch = player.crouch && Math.hypot(slot.x-s.pos.x,slot.z-s.pos.z)<1.2; }
+  } else if(ai.state==='follow' && slot){ mx=slot.x; mz=slot.z;
+    if(squadMode==='free'){ const d=Math.hypot(slot.x-s.pos.x,slot.z-s.pos.z); spd = d>20?5.5 : s.role==='push'?3.2:2.4; s.wantCrouch = s.role==='hold' && d<1.2; }
+    else { spd=6.8; s.wantCrouch = player.crouch && Math.hypot(slot.x-s.pos.x,slot.z-s.pos.z)<1.2; } }
   else if(ai.state==='advance' && ai.objective){
     mx=ai.objective.x; mz=ai.objective.z; spd=2.6;
     if(Math.hypot(mx-s.pos.x,mz-s.pos.z)<1.5){
@@ -2596,7 +2635,7 @@ function updateAI(s,dt,slot){
     const gx=s.pos.x-g.pos.x, gz=s.pos.z-g.pos.z, gd=Math.hypot(gx,gz);
     if(gd<6.5 && g.fuse<2.3 && Math.abs(g.vel.x)+Math.abs(g.vel.z)<6){ mx=s.pos.x+gx/(gd||1)*7; mz=s.pos.z+gz/(gd||1)*7; spd=5.5; faceT=null; break; }
   }
-  moveSoldierToward(s,mx,mz,spd,dt,slot&&!faceT?player.yaw:undefined);
+  moveSoldierToward(s,mx,mz,spd,dt,slot&&!faceT?(squadMode==='free'?(s.lookYaw??spawnYaw):player.yaw):undefined);
   if(faceT) faceToward(s,faceT.x,faceT.z,dt);
   // aim the gun arm at the target
   if(s.armR){
@@ -2633,7 +2672,8 @@ function updateCombat(dt,t){
   if(protectT>0){ pe.style.opacity=1; pe.textContent=`🛡 BATTLE START PROTECTION · ${Math.ceil(protectT)}  (no one can be hurt)`; }
   else pe.style.opacity=0;
   updateGrenades(dt);
-  const slots=mates.map((m,i)=>{ const o=FORM[i%FORM.length]; return new V3(player.pos.x+o.x*Math.cos(player.yaw)+o.z*Math.sin(player.yaw),0,player.pos.z-o.x*Math.sin(player.yaw)+o.z*Math.cos(player.yaw)); });
+  const slots = squadMode==='free' ? mates.map(m=>freeAnchor(m,dt)) :
+    mates.map((m,i)=>{ const o=FORM[i%FORM.length]; return new V3(player.pos.x+o.x*Math.cos(player.yaw)+o.z*Math.sin(player.yaw),0,player.pos.z-o.x*Math.sin(player.yaw)+o.z*Math.cos(player.yaw)); });
   mates.forEach((m,i)=>{ if(m.dead) animateDead(m,dt); else { updateAI(m,dt,slots[i]); animateSoldier(m,dt,t); } });
   const surrendered = battle.done && (berlinAttack() || currentMap==='moscow');
   for(const e of enemies){ if(e.dead) animateDead(e,dt); else if(surrendered){ e.vel.set(0,0,0); e.speed=0; if(e.armR) e.aimPitch=-0.9; animateSoldier(e,dt,t); } else { updateAI(e,dt,null); animateSoldier(e,dt,t); } }
@@ -3703,6 +3743,7 @@ addEventListener('keydown',e=>{
   if(e.code==='KeyR') startReload();
   if(e.code==='KeyC' && !e.repeat) player.crouchToggle=!player.crouchToggle;
   if(e.code==='KeyG') throwGrenade();
+  if(e.code==='KeyF' && !e.repeat) toggleSquadMode();
 });
 addEventListener('keyup',e=>{ keys[e.code]=false; });
 addEventListener('blur',()=>{ for(const k in keys) keys[k]=false; mouseDown=rmb=false; });
@@ -3776,6 +3817,7 @@ if(IS_TOUCH){
   btn('tSprint',()=>{ touch.sprint=!touch.sprint; if(touch.sprint) player.crouchToggle=false; });
   btn('tJump',()=>{ jumpQueued=true; });
   btn('tReload',()=>{ startReload(); });
+  btn('tSquad',()=>toggleSquadMode());
   btn('tNade',()=>{ if(isTankMap()) touch.mg=true; else throwGrenade(); },()=>{ touch.mg=false; });
   btn('tCrouch',()=>{ player.crouchToggle=!player.crouchToggle; touch.sprint=false; });
   $('tPause').addEventListener('pointerdown',e=>{ e.preventDefault(); if(state==='playing') pauseGame(); });
@@ -5068,6 +5110,7 @@ function startGame(){
   state='paused'; $('pause').style.display='flex'; showAudioInfo();
   buildCrosshair();
   if(coopHost()){ coop.failed=false; coop.respT=0; coopAfterStart(); }
+  updateSquadLabel();
 }
 // Mouse lock. If the browser/preview blocks it, fall back to "cursor mode".
 let lockPending=false, cursorMode=false, mouseX=innerWidth/2;
