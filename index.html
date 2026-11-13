@@ -1126,6 +1126,8 @@ function buildSeelow(){
     sBox(x,1.8,z,6.4,0.35,4.4,K.log,false); const top=new THREE.SphereGeometry(3.4,10,6,0,Math.PI*2,0,Math.PI/2); top.scale(1,0.25,0.7); addGeo(top,K.grass,x,2.1,z);
   }
   bunker(-38,27); bunker(38,27); bunker(-12,42); bunker(12,42);
+  bunker(-24,28); bunker(24,28); bunker(-8,28); bunker(8,28);          // more bunkers right behind the front trench
+  bunker(-30,16); bunker(30,16);                                       // forward bunkers on the crest
   // MG nests on the crest
   for(const [x,z] of [[-14,19.5],[13,19.5],[-40,19.5],[40,19.5]]) sandbags(x,z,3);
   // ---- the slope and the killing field in front ----
@@ -1232,10 +1234,13 @@ const MAPS={
   stalingrad:{id:'stalingrad',name:'Stalingrad · Winter 1942',short:'STALINGRAD',build:buildStalingrad,snow:true,mode:'infantry',total:50,tex:snowTex,
     sky:0x8c9096,fog:[10,110],hemi:[0xd6dce4,0x5a5048,1.35],sun:[0xffe2c4,1.5]},
   kursk:{id:'kursk',name:'Kursk · Summer 1943',short:'KURSK',build:buildKursk,snow:false,mode:'tank',total:20,tex:grassTex,
+    tank:{total:20,maxActive:20,start:[0,34],
+      allies:(()=>{ const a=[]; for(let i=0;i<19;i++){ const row=Math.floor(i/7), k=i%7; const x=(k-3)*15+(row%2?7:0), z=40+row*8; if(Math.abs(x)<5 && z<44) { a.push([x+10,z]); continue; } a.push([x,z]); } return a; })(),
+      spawns:(()=>{ const a=[]; for(let r=0;r<3;r++) for(let k=0;k<7;k++) a.push([(k-3)*15+(r%2?7:0),-44-r*8]); return a; })()},
     sky:0xb7c7d2,fog:[22,170],hemi:[0xe4ecf2,0x6a6840,1.45],sun:[0xfff0d2,2.6]},
   berlin:{id:'berlin',name:'Berlin · April 1945',short:'BERLIN',build:buildBerlin,snow:false,mode:'infantry',total:45,tex:rubbleTex,objective:'reichstag',
     sky:0x847a6d,fog:[8,105],hemi:[0xd6c8b2,0x4a4038,1.25],sun:[0xffc890,1.5]},
-  seelow:{id:'seelow',name:'Seelow Heights · April 1945',short:'SEELOW HEIGHTS',build:buildSeelow,snow:false,mode:'infantry',total:150,tex:mudTex,maxActive:IS_TOUCH?12:18,
+  seelow:{id:'seelow',name:'Seelow Heights · April 1945',short:'SEELOW HEIGHTS',build:buildSeelow,snow:false,mode:'infantry',total:100,tex:mudTex,maxActive:IS_TOUCH?10:18,
     sky:0x5d6573,fog:[10,100],hemi:[0xb4bccb,0x3e3a30,1.15],sun:[0xffb878,1.25]},
   moscow:{id:'moscow',name:'Moscow · December 1941',short:'MOSCOW',build:buildMoscow,snow:true,mode:'mixed',total:4,tex:snowTex,maxActive:IS_TOUCH?10:14,
     sky:0x9aa2ab,fog:[10,115],hemi:[0xdde4ee,0x5a5650,1.35],sun:[0xfff0dc,1.4],
@@ -1409,9 +1414,9 @@ function updateArtillery(dt,t){
 /* ================= FACTIONS & WEAPONS ================= */
 const SIDES = {
   soviet:{ title:'RED ARMY', uniform:0x7f7651, pants:0x6c6547, helmet:0x4a5537, boots:0x2a2018, color:'#e0604f',
-    weapons:['ppsh','mosin'], names:['Pvt. Volkov','Sgt. Petrov','Pvt. Sokolov','Cpl. Morozov','Pvt. Lebedev','Pvt. Orlov'] },
+    weapons:['ppsh','mosin'], names:['Pvt. Volkov','Sgt. Petrov','Pvt. Sokolov','Cpl. Morozov','Pvt. Lebedev','Pvt. Orlov','Pvt. Kuznetsov','Pvt. Popov','Cpl. Vasiliev','Pvt. Pavlov','Pvt. Semyonov','Pvt. Golubev','Sgt. Vinogradov','Pvt. Bogdanov','Pvt. Fyodorov'] },
   german:{ title:'WEHRMACHT', uniform:0x5c6355, pants:0x545a4e, helmet:0x575c53, boots:0x1e1c1a, color:'#b9c2b0',
-    weapons:['mp40','kar98k'], names:['Gefr. Becker','Uffz. Krüger','Schütze Hartmann','Obgefr. Lang','Schütze Vogel','Gefr. Braun'] }
+    weapons:['mp40','kar98k'], names:['Gefr. Becker','Uffz. Krüger','Schütze Hartmann','Obgefr. Lang','Schütze Vogel','Gefr. Braun','Schütze Weber','Gefr. Fischer','Schütze Schulz','Obgefr. Wolf','Schütze Neumann','Gefr. Schwarz','Uffz. Zimmermann','Schütze Koch','Gefr. Richter'] }
 };
 const WEAPONS = {
   ppsh:  {name:'PPSh-41',            desc:'SMG · 71-round drum · very fast fire', auto:true,  rate:0.067,mag:71,reserve:213,reload:2.8,spread:0.03, recoil:0.010,heavy:false},
@@ -1871,7 +1876,8 @@ function animateSoldier(s,dt,t){
 
 /* ================= SQUADS ================= */
 let mates=[], enemies=[], avatar=null;
-const FORM=[new V3(-2.2,0,2.2),new V3(2.2,0,2.2),new V3(-1.2,0,4.4),new V3(1.2,0,4.4),new V3(0,0,6.4)];
+const SQUAD_MATES=14;   // you + 14 = 15 on our side
+const FORM=(()=>{ const f=[]; [2,4,4,4].forEach((n,r)=>{ for(let k=0;k<n;k++) f.push(new V3((k-(n-1)/2)*2.4,0,1.9*(r+1))); }); return f; })();
 const SPAWN=new V3(0,0,32);
 
 function clearSoldiers(){
@@ -1885,7 +1891,7 @@ function spawnWorld(side,weapon,withAvatar){
   clearSoldiers();
   const S=SIDES[side], enemySide = side==='soviet'?'german':'soviet', E=SIDES[enemySide];
   const yaw=spawnYaw;
-  for(let i=0;i<5;i++){
+  for(let i=0;i<SQUAD_MATES;i++){
     const m=makeSoldier(side,S.weapons[i%2],S.names[i+1]);
     const o=FORM[i];
     m.pos.set(SPAWN.x+o.x*Math.cos(yaw)+o.z*Math.sin(yaw),0,SPAWN.z-o.x*Math.sin(yaw)+o.z*Math.cos(yaw));
@@ -2252,9 +2258,10 @@ let checkpoint=null; // {map, killed, kills, reserve}
 function resetBattle(){ battle={total:(currentMap==='moscow'&&moscowPhase===2)?999:(MAPS[currentMap].total||BATTLE_TOTAL),spawned:enemies.length,killed:0,spawnT:3,done:false}; }
 function battleTitle(){
   if(currentMap==='moscow') return moscowPhase===1 ? `MOSCOW · BREAK THROUGH TO THE CITY EDGE · ${tanks.filter(k=>k.team==='ally').length||4} OF OUR TANKS VS ${battle.total}` : 'MOSCOW · HOLD THE FACTORY YARD UNTIL RELIEF ARRIVES';
-  if(berlinAttack()) return `BERLIN · STORM THE REICHSTAG · 6 OF US VS ${battle.total} DEFENDERS`;
-  if(berlinDefend()) return `BERLIN · HOLD THE REICHSTAG · 6 OF US VS ${battle.total} ATTACKERS`;
-  return isTankMap() ? `${MAPS[currentMap].name.toUpperCase()} · 8 OF OUR TANKS VS ${battle.total} OF THEIRS + INFANTRY` : `${MAPS[currentMap].name.toUpperCase()} · 6 OF US VS ${battle.total} OF THEM`; }
+  const us=SQUAD_MATES+1;
+  if(berlinAttack()) return `BERLIN · STORM THE REICHSTAG · ${us} OF US VS ${battle.total} DEFENDERS`;
+  if(berlinDefend()) return `BERLIN · HOLD THE REICHSTAG · ${us} OF US VS ${battle.total} ATTACKERS`;
+  return isTankMap() ? `${MAPS[currentMap].name.toUpperCase()} · ${tanks.filter(k=>k.team==='ally').length} OF OUR TANKS VS ${battle.total} OF THEIRS + INFANTRY` : `${MAPS[currentMap].name.toUpperCase()} · ${us} OF US VS ${battle.total} OF THEM`; }
 function spawnReinforcement(){
   const enemySide = selSide==='soviet'?'german':'soviet', E=SIDES[enemySide];
   const SP=reinforcementSpawns();
@@ -2414,7 +2421,7 @@ function updateCombat(dt,t){
   $('hpbar').style.background=playerHP>50?'#cfd8b8':playerHP>25?'#e0b050':'#d0603c';
   const dd=$('dmgdir'); if(+dd.dataset.t>0){ dd.dataset.t=+dd.dataset.t-dt; dd.style.opacity=Math.max(0,+dd.dataset.t); }
   const squad=mates.filter(m=>!m.dead).length+(playerDead?0:1);
-  $('waveInfo').textContent= currentMap==='moscow' ? `MOSCOW · ENEMIES KILLED ${battle.killed}   SQUAD ${squad}/6   KILLS ${kills}` : `${MAPS[currentMap].short} · ENEMIES LEFT ${battle.total-battle.killed}   SQUAD ${squad}/6   KILLS ${kills}`;
+  $('waveInfo').textContent= currentMap==='moscow' ? `MOSCOW · ENEMIES KILLED ${battle.killed}   SQUAD ${squad}/${SQUAD_MATES+1}   KILLS ${kills}` : `${MAPS[currentMap].short} · ENEMIES LEFT ${battle.total-battle.killed}   SQUAD ${squad}/${SQUAD_MATES+1}   KILLS ${kills}`;
 }
 
 /* ================= TANK BATTLE (Kursk) ================= */
@@ -2520,6 +2527,7 @@ function aimTankAt(tk,pt,dt){
   const step=tk.T.trav*dt; tk.turYaw+=Math.max(-step,Math.min(step,err));
   const tFlight=d/SHELL_SPEED, drop=0.5*SHELL_G*tFlight*tFlight;
   const wantP=Math.atan2(pt.y+drop-piv.y,d);
+  tk.dropComp=wantP-Math.atan2(pt.y-piv.y,d);     // how far the barrel is raised above the line of sight
   const pe=wantP-tk.gunPitch; tk.gunPitch+=Math.max(-0.4*dt,Math.min(0.4*dt,pe));
   tk.gunPitch=Math.max(-0.14,Math.min(0.35,tk.gunPitch));
   tk.tur.rotation.y=tk.turYaw; tk.gun.rotation.x=tk.gunPitch;
@@ -2819,7 +2827,7 @@ function updateInfantry(dt,t){
         const far=Math.hypot(mx-s.pos.x,mz-s.pos.z); spd=far>20?6.5:far>4?4.2:0; }
     } else {
       if(finalPush && ptank){ mx=ptank.pos.x+ai.slot.x*0.5; mz=ptank.pos.z-8; spd=3.4; }
-      else if(ai.goal){ mx=ai.goal.x; mz=ai.goal.z; spd=battle.spawned>tankMaxActive()||s.pos.z>-20?2.4:0;
+      else if(ai.goal){ mx=ai.goal.x; mz=ai.goal.z; spd=battle.killed>=3||s.pos.z>-20?2.4:0;
         if(Math.hypot(mx-s.pos.x,mz-s.pos.z)<3) ai.goal=null; }
       else if(ptank){ mx=ptank.pos.x+ai.slot.x; mz=ptank.pos.z-15; spd=2.2; }
     }
@@ -2872,8 +2880,10 @@ const TANK_SPAWNS=[[-40,-58],[-20,-60],[0,-60],[20,-58],[40,-58],[55,-45],[-55,-
 function spawnEnemyTank(){
   const enemySide=selSide==='soviet'?'german':'soviet';
   const TS=TCFG().spawns||TANK_SPAWNS;
-  const far=TS.filter(p=>Math.hypot(p[0]-ptank.pos.x,p[1]-ptank.pos.z)>45);
-  const p=(far.length?far:TS)[(Math.random()*(far.length||TS.length))|0];
+  const far=TS.filter(p=>Math.hypot(p[0]-ptank.pos.x,p[1]-ptank.pos.z)>45), list=far.length?far:TS;
+  // use the free-est spawn point so big battles don't stack tanks on top of each other
+  let p=list[0], best=-1;
+  for(const c of list){ let md=1e9; for(const o of tanks) if(!o.dead) md=Math.min(md,Math.hypot(o.pos.x-c[0],o.pos.z-c[1])); md+=Math.random()*3; if(md>best){ best=md; p=c; } }
   const tk=makeTank(tankTypesFor(selSide,'enemy'),'enemy',false);
   tk.pos.set(p[0]+(Math.random()-.5)*6,0,p[1]+(Math.random()-.5)*4); tk.heading=Math.PI+(Math.random()-.5)*0.6; tk.root.rotation.y=tk.heading;
   scene.add(tk.root); tanks.push(tk); battle.spawned++;
@@ -2927,24 +2937,32 @@ function updateTankPlayer(dt){
   player.pitch=Math.max(-0.35,Math.min(0.5,player.pitch));
   const d=new V3(-Math.sin(player.yaw)*Math.cos(player.pitch),Math.sin(player.pitch),-Math.cos(player.yaw)*Math.cos(player.pitch));
   const piv=tk.pos.clone().add(new V3(0,2.6,0));
+  let aimFrom;
   if(sight){
-    const gp=gunPivotWorld(tk); camera.position.copy(gp).add(new V3(0,0.45,0)).addScaledVector(fwdOf(tk.heading+tk.turYaw),0.6);
+    // gunner sight: the view is locked to the gun itself, so the reticle never drifts.
+    // The mouse sets where you WANT to aim; the turret turns there at its own speed.
+    const gp=gunPivotWorld(tk); gp.y-=tk.hull.position.y;                      // ignore suspension bounce
+    const yaw=tk.heading+tk.turYaw, pitch=tk.gunPitch-(tk.dropComp||0);
+    camera.position.copy(gp).add(new V3(0,0.45,0)).addScaledVector(fwdOf(yaw),0.6);
+    camera.lookAt(camera.position.clone().add(new V3(-Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch))));
+    aimFrom=camera.position.clone();
   } else {
     camera.position.copy(piv).addScaledVector(d,-10).add(new V3(0,1.2,0));
     if(camera.position.y<0.6) camera.position.y=0.6;
+    camera.lookAt(camera.position.clone().add(d));
+    aimFrom=camera.position;
   }
-  camera.lookAt(camera.position.clone().add(d));
   camera.fov = sight?22:70; camera.updateProjectionMatrix();
-  if(shakeT>0){ shakeT=Math.max(0,shakeT-dt*2.2); const k=shakeT*shakeT; camera.position.x+=(Math.random()-.5)*k*0.3; camera.position.y+=(Math.random()-.5)*k*0.3; }
-  // what the crosshair points at
-  const ce=traceEnv(camera.position,d,600), ct=traceTanks(camera.position,d,600,tk);
+  if(shakeT>0){ shakeT=Math.max(0,shakeT-dt*2.2); if(!sight){ const k=shakeT*shakeT; camera.position.x+=(Math.random()-.5)*k*0.3; camera.position.y+=(Math.random()-.5)*k*0.3; } }
+  // what you are aiming at (from the mouse direction)
+  const ce=traceEnv(aimFrom,d,600), ct=traceTanks(aimFrom,d,600,tk);
   const dist = ct && (!ce||ct.dist<ce.dist) ? ct.dist : ce ? ce.dist : 500;
-  tankAimPoint.copy(camera.position).addScaledVector(d,dist);
+  tankAimPoint.copy(aimFrom).addScaledVector(d,dist);
   if(!tk.dead) aimTankAt(tk,tankAimPoint,dt);
   // gun marker: where the gun is really pointing
   const gdir=new V3(0,0,-1).applyQuaternion(tk.gun.getWorldQuaternion(new THREE.Quaternion()));
   const gp=gunPivotWorld(tk).addScaledVector(gdir,Math.max(20,gunPivotWorld(tk).distanceTo(tankAimPoint))).project(camera);
-  const gm=$('gunMark'); gm.style.display='block'; gm.style.left=((gp.x+1)/2*innerWidth)+'px'; gm.style.top=((1-gp.y)/2*innerHeight)+'px';
+  const gm=$('gunMark'); gm.style.display=sight?'none':'block'; gm.style.left=((gp.x+1)/2*innerWidth)+'px'; gm.style.top=((1-gp.y)/2*innerHeight)+'px';
   $('tankSight').style.display=sight?'block':'none';
   // reload, machine gun
   tk.reloadT=Math.max(0,tk.reloadT-dt);
@@ -3540,7 +3558,7 @@ const STORY={
    brief:[`Comrade, listen well. The Germans hold most of the city now. We are pressed against the Volga with the river at our backs, and every boat that crosses brings fresh men into the fire.`,
           `Order No. 227 is clear: not one step back. Your section holds the ruins on Lenin Street. The enemy is massing in the blocks to the north to push us into the river.`,
           `Use the rubble. Fight from building to building, close enough that their artillery and aircraft cannot help them. Keep your men alive and keep your head down.`],
-   obj:'Defeat 50 German soldiers attacking along the street. You have 5 comrades with you.',
+   obj:'Defeat 50 German soldiers attacking along the street. You have 14 comrades with you.',
    debrief:[`You held Lenin Street. Across the city, sections like yours held on by their fingernails.`,
             `On 19 November our armies attacked the weak Romanian flanks north and south of the city. Four days later the ring closed. The German 6th Army, the hunters, are now trapped in the ruins they came to take.`,
             `In February 1943 they surrender. The tide of the war in the East has turned.`]},
@@ -3549,7 +3567,7 @@ const STORY={
    brief:[`The Germans have gathered almost every tank they have, new Tigers among them, to cut off the Kursk bulge. They call it Operation Citadel. We have known it was coming for months.`,
           `We have dug trenches, laid minefields and built gun lines in depth. Now it is our turn to strike back. You command a T-34. Infantry will advance with us through the fields.`,
           `The Tiger's front armour is too thick for our guns. Close the distance, use the ground, and hit them in the side and the rear. Machine-gun their anti-tank teams before they get close.`],
-   obj:'Destroy 20 enemy tanks and all of their infantry. 8 of our tanks are with you.',
+   obj:'Destroy 20 enemy tanks and all of their infantry. 20 of our tanks fight alongside you.',
    debrief:[`The fields burn with the wrecks of both sides. But the German attack is broken.`,
             `On 13 July they call off Citadel. It is the last great German offensive in the East. From here on, they retreat and we advance: Orel, Kharkov, then the Dnieper.`,
             `The road west is open.`]},
@@ -3557,9 +3575,9 @@ const STORY={
    from:'Lieutenant Colonel A. Gromov · 8th Guards Army',
    brief:[`The assault on the Heights began before dawn: the heaviest barrage of the war, then our searchlights turned on to blind the enemy. The light reflected off the smoke and blinded us instead.`,
           `Your section is one of the few that reached the German trenches on the crest. The rest of the battalion is pinned in the flooded meadows below.`,
-          `Now the Germans are throwing everything they have left at you to win the ridge back: panzergrenadiers, police, boys of the Volkssturm. There are only six of you. Hold the captured trench until the second wave fights its way up. You are badly outnumbered. Use the trench, the bunkers and every grenade.`],
-   obj:'Defeat 150 counter-attacking German soldiers. Only 6 of you hold the crest.',
-   debrief:[`Somehow, the six of you held. By evening the second wave reached the crest.`,
+          `Now the Germans are throwing everything they have left at you to win the ridge back: panzergrenadiers, police, boys of the Volkssturm. There are only fifteen of you. Hold the captured trench until the second wave fights its way up. You are badly outnumbered. Use the trench, the bunkers and every grenade.`],
+   obj:'Defeat 100 counter-attacking German soldiers. Only 15 of you hold the crest.',
+   debrief:[`Somehow, the fifteen of you held. By evening the second wave reached the crest.`,
             `The Heights fall on 19 April. Tens of thousands of Soviet soldiers died on these slopes in four days.`,
             `Beyond the ridge, the road to Berlin is open. Eleven days later you will be standing in front of the Reichstag.`]},
   berlin:{date:'30 April 1945',place:'Berlin, the Königsplatz',title:'The Victory Banner',
@@ -3587,7 +3605,7 @@ const STORY={
    brief:[`We were told the city would fall in weeks. It has been three months. The Russians cling to every ruin along the river, and we pay for every house in blood.`,
           `Our orders: take the street block in front of us and push through to the Volga. Command says one more push will finish it. Command has said that before.`,
           `Watch the windows and the rubble. They fight up close, at night, from the cellars. Stay with your squad. Nobody is coming to get you out if you are cut off.`],
-   obj:'Defeat 50 Soviet soldiers defending the street. You have 5 comrades with you.',
+   obj:'Defeat 50 Soviet soldiers defending the street. You have 14 comrades with you.',
    debrief:[`We took the street. It changes nothing.`,
             `On 19 November the Soviets break through our flanks, and within four days the whole 6th Army is surrounded. Your squad is flown out with the wounded on one of the last planes before the ring tightens.`,
             `Of the 91,000 who surrender in February 1943, only about 6,000 will ever see home again.`]},
@@ -3596,7 +3614,7 @@ const STORY={
    brief:[`High command has gathered everything for one great blow: Panthers, Tigers and hundreds of Panzer IVs, to cut off the Soviet bulge at Kursk.`,
           `We have waited months for the new tanks. The Russians have used those months to dig. Expect mines, trenches, anti-tank guns, and masses of T-34s.`,
           `You command a Panzer IV. Our infantry advances with us. Engage at range, keep your front towards the enemy, and do not let their anti-tank teams get close.`],
-   obj:'Destroy 20 enemy tanks and all of their infantry. 8 of our tanks are with you.',
+   obj:'Destroy 20 enemy tanks and all of their infantry. 20 of our tanks fight alongside you.',
    debrief:[`We hold this field tonight. Elsewhere, the attack is grinding to a halt.`,
             `On 13 July the offensive is called off. The Soviets counter-attack at once. This was our last great offensive in the East. From now on we only retreat.`,
             `The men in your crew stop talking about victory. They talk about home.`]},
@@ -3605,7 +3623,7 @@ const STORY={
    brief:[`At three this morning the sky in the east turned white. Thousands of guns, then searchlights shining up at the Heights. The Soviet offensive on Berlin has begun.`,
           `This ridge is the last real line between the Oder and the capital. The division is stretched far too thin. Your squad holds a section of trench alone, with the nearest friends hundreds of metres away.`,
           `They will come up the slope in wave after wave. There may be hundreds of them for every one of us. Stay low, keep moving between the trench and the bunkers, and do not let them into the line.`],
-   obj:'Defeat 150 Soviet soldiers assaulting the ridge. Only 6 of you hold this section.',
+   obj:'Defeat 100 Soviet soldiers assaulting the ridge. Only 15 of you hold this section.',
    debrief:[`Your section held until dark. All around you, the line did not.`,
             `On 19 April the Soviets break through and the Heights fall. What is left of the 9th Army is encircled south of Berlin.`,
             `You fall back with your squad into the city, towards the Reichstag. The end is two weeks away.`]},
@@ -3621,10 +3639,10 @@ const STORY={
  }
 };
 const MISSION_INFO={
-  stalingrad:{n:'I',mode:'On foot · 6 vs 50',color:'#c9d3dc'},
+  stalingrad:{n:'I',mode:'On foot · 15 vs 50',color:'#c9d3dc'},
   moscow:{n:'II',mode:'4 vs 4 tank battle, then on foot · hold until relief',color:'#c9d3dc'},
-  kursk:{n:'III',mode:'Tank battle · 8 vs 20 + infantry',color:'#d8c98a'},
-  seelow:{n:'IV',mode:'On foot · 6 vs 150 · hopelessly outnumbered',color:'#a9b4c6'},
+  kursk:{n:'III',mode:'Tank battle · 20 vs 20 + infantry',color:'#d8c98a'},
+  seelow:{n:'IV',mode:'On foot · 15 vs 100 · badly outnumbered',color:'#a9b4c6'},
   berlin:{n:'V',mode:'On foot · storm / hold the Reichstag',color:'#d09a7a'}
 };
 let briefMission='stalingrad';
@@ -3942,7 +3960,7 @@ function showMapDone(next){
   const el=$('mapdone'), squad=isTankMap()?tanks.filter(t=>t.team==='ally'&&!t.dead).length:mates.filter(m=>!m.dead).length+1;
   const what = berlinAttack() ? 'The Reichstag is taken' : `All ${battle.total} enemy ${isTankMap()?'tanks and their infantry':'soldiers'} defeated`;
   el.innerHTML=`<div style="font-size:44px;letter-spacing:6px">MISSION COMPLETE</div>
-    <div style="margin-top:10px;font-size:18px;opacity:.85">${what} · survivors ${squad}/${isTankMap()?8:6} · ${kills} kills</div>
+    <div style="margin-top:10px;font-size:18px;opacity:.85">${what} · survivors ${squad}/${isTankMap()?tanks.filter(k=>k.team==='ally').length:SQUAD_MATES+1} · ${kills} kills</div>
     <div style="margin-top:22px;font-size:16px;letter-spacing:3px;opacity:.8">After-action report incoming…</div>`;
   el.style.opacity=1;
 }
