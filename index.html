@@ -213,6 +213,7 @@
   <button id="resume" class="big">CLICK TO PLAY</button>
   <button id="saveBtn" class="big">SAVE GAME</button>
   <button id="musicBtn" class="big">MUSIC: ON</button>
+  <div id="audioInfo" style="margin-top:10px;font-size:12px;opacity:.7;text-align:center;max-width:90vw"></div>
   <button id="toMenu" class="big">MAIN MENU</button>
 </div>
 
@@ -2749,11 +2750,16 @@ function buildSounds(){
   SB.step=synth(0.09,(d,sr,n)=>{ let y=0; for(let i=0;i<n;i++){ const t=i/sr,x=Math.random()*2-1; y+=0.12*(x-y); d[i]=y*Math.exp(-t*45); } });
   SB.land=synth(0.2,(d,sr,n)=>{ let y=0,ph=0; for(let i=0;i<n;i++){ const t=i/sr,x=Math.random()*2-1; y+=0.05*(x-y); ph+=2*Math.PI*(90-200*t)/sr; d[i]=(y*2+Math.sin(ph)*0.6)*Math.exp(-t*20); } });
 }
+// Apple devices (Safari's audio engine) and phones get a much lighter sound setup so the audio never falls behind
+const LITE_AUDIO = IS_TOUCH || /Mac|iPhone|iPad|iPod/.test(navigator.platform||'') || /Safari/.test(navigator.userAgent) && !/Chrome|Chromium|Edg/.test(navigator.userAgent);
+let voices=0; const MAX_VOICES = LITE_AUDIO ? 14 : 28;
 function play(buf,vol=1,rate=1,delay=0){
   if(!actx || !buf || vol<0.01) return;
+  if(voices>=MAX_VOICES && delay===0 && vol<0.6) return;      // too many sounds at once: skip quiet far-away ones
   const src=actx.createBufferSource(); src.buffer=buf; src.playbackRate.value=rate*(0.95+Math.random()*0.1);
   const g=actx.createGain(); g.gain.value=vol; src.connect(g).connect(master);
-  src.start(actx.currentTime+delay);
+  voices++; src.onended=()=>{ voices--; src.disconnect(); g.disconnect(); };
+  src.start(delay>0 ? actx.currentTime+delay : 0);              // 0 = "right now", the fastest way to start a sound
 }
 function noise(dur,freq,vol,type='lowpass',endFreq=null,delay=0){
   if(!actx) return; const t=actx.currentTime+delay;
@@ -2789,10 +2795,18 @@ function musInit(){
   if(MUS.bus || !actx) return;
   MUS.bus=actx.createGain(); MUS.bus.gain.value=0;
   // concert-hall reverb made from decaying noise
-  const len=actx.sampleRate*2.8, ir=actx.createBuffer(2,len,actx.sampleRate);
-  for(let c=0;c<2;c++){ const d=ir.getChannelData(c); for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.6); }
-  const rev=actx.createConvolver(); rev.buffer=ir; const revG=actx.createGain(); revG.gain.value=0.42;
-  MUS.bus.connect(master); MUS.bus.connect(rev); rev.connect(revG); revG.connect(master);
+  let rev;
+  if(LITE_AUDIO){ // two short echo lines instead of a heavy convolution reverb
+    rev=actx.createGain(); const lp=actx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=1800; rev.connect(lp);
+    for(const [dt,fb] of [[0.113,0.38],[0.171,0.32]]){ const d=actx.createDelay(0.5), f=actx.createGain(); d.delayTime.value=dt; f.gain.value=fb; lp.connect(d); d.connect(f); f.connect(d); d.connect(MUS.revOut||(MUS.revOut=actx.createGain())); }
+    rev.revTail=MUS.revOut;
+  } else {
+    const len=actx.sampleRate*1.6, ir=actx.createBuffer(2,len,actx.sampleRate);
+    for(let c=0;c<2;c++){ const d=ir.getChannelData(c); for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.6); }
+    rev=actx.createConvolver(); rev.buffer=ir; rev.revTail=rev;
+  }
+  const revG=actx.createGain(); revG.gain.value=LITE_AUDIO?0.3:0.42;
+  MUS.bus.connect(master); MUS.bus.connect(rev); rev.revTail.connect(revG); revG.connect(master);
   for(const k of ['pad','ost','drum','brass']){ const g=actx.createGain(); g.gain.value=0; g.connect(MUS.bus); MUS.layers[k]=g; }
   // stings play on their own channel so they still sound when the battle music fades out
   const sg=actx.createGain(); sg.gain.value=0.6; sg.connect(master); sg.connect(rev); MUS.layers.sting=sg;
@@ -2802,7 +2816,7 @@ function strings(dest,m,t,dur,vol,cut=900,att=0.7){
   const g=actx.createGain(), f=actx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=cut; f.Q.value=0.7;
   g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+att); g.gain.setValueAtTime(vol,t+Math.max(att,dur-0.8)); g.gain.linearRampToValueAtTime(0,t+dur+0.6);
   f.connect(g); g.connect(dest);
-  for(const det of [-8,0,7]){ const o=actx.createOscillator(); o.type='sawtooth'; o.frequency.value=mf(m); o.detune.value=det; o.connect(f); o.start(t); o.stop(t+dur+0.7); }
+  for(const det of (LITE_AUDIO?[0]:[-7,7])){ const o=actx.createOscillator(); o.type='sawtooth'; o.frequency.value=mf(m); o.detune.value=det; o.connect(f); o.start(t); o.stop(t+dur+0.7); }
 }
 function ostinato(dest,m,t,vol){
   const o=actx.createOscillator(), f=actx.createBiquadFilter(), g=actx.createGain();
@@ -2833,12 +2847,12 @@ function brass(dest,m,t,dur,vol){
   const g=actx.createGain(), f=actx.createBiquadFilter(); f.type='lowpass'; f.Q.value=2;
   f.frequency.setValueAtTime(500,t); f.frequency.linearRampToValueAtTime(2600,t+0.08); f.frequency.exponentialRampToValueAtTime(1300,t+0.5);
   g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+0.06); g.gain.setValueAtTime(vol*0.85,t+Math.max(0.1,dur-0.12)); g.gain.linearRampToValueAtTime(0,t+dur+0.15);
-  const lfo=actx.createOscillator(), lg=actx.createGain(); lfo.frequency.value=5.2; lg.gain.value=4; lfo.connect(lg);
-  for(const [type,mul,lv] of [['sawtooth',1,1],['square',1,0.4],['sawtooth',0.5,0.6]]){
-    const o=actx.createOscillator(), og=actx.createGain(); o.type=type; o.frequency.value=mf(m)*mul; og.gain.value=lv; lg.connect(o.detune);
+  const lfo=LITE_AUDIO?null:actx.createOscillator(), lg=LITE_AUDIO?null:actx.createGain(); if(lfo){ lfo.frequency.value=5.2; lg.gain.value=4; lfo.connect(lg); }
+  for(const [type,mul,lv] of (LITE_AUDIO?[['sawtooth',1,1]]:[['sawtooth',1,1],['square',1,0.4]])){
+    const o=actx.createOscillator(), og=actx.createGain(); o.type=type; o.frequency.value=mf(m)*mul; og.gain.value=lv; if(lg) lg.connect(o.detune);
     o.connect(og); og.connect(f); o.start(t); o.stop(t+dur+0.2);
   }
-  lfo.start(t); lfo.stop(t+dur+0.2); f.connect(g); g.connect(dest);
+  if(lfo){ lfo.start(t); lfo.stop(t+dur+0.2); } f.connect(g); g.connect(dest);
 }
 function bell(dest,m,t,vol){
   for(const [mul,lv] of [[1,1],[2.76,0.4],[5.4,0.2]]){ const o=actx.createOscillator(), g=actx.createGain(); o.type='sine'; o.frequency.value=mf(m)*mul;
@@ -2847,7 +2861,7 @@ function bell(dest,m,t,vol){
 // ---- sequencer ----
 function musStep(st,t){
   const L=MUS.layers, bar=Math.floor(st/16)%8, s16=st%16, ci=Math.floor(bar/2)%4, C=CHORDS[ci];
-  if(st%32===0){ for(const n of C.n) strings(L.pad,n,t,STEP*32,0.035); strings(L.pad,C.b+12,t,STEP*32,0.03,600); strings(L.pad,C.b,t,STEP*32,0.035,350); }
+  if(st%32===0){ for(const n of C.n) strings(L.pad,n,t,STEP*32,0.035); if(!LITE_AUDIO) strings(L.pad,C.b+12,t,STEP*32,0.03,600); strings(L.pad,C.b,t,STEP*32,0.035,350); }
   // driving string ostinato
   const pat=[1,0,1,1, 1,0,1,1, 1,0,1,1, 1,1,1,1];
   if(pat[s16]){ const m = (s16%4===3) ? C.b+19 : C.b+12; ostinato(L.ost,m,t,0.05); if(s16%8===0) ostinato(L.ost,C.b,t,0.05); }
@@ -2859,11 +2873,12 @@ function musStep(st,t){
   if(bar%8===7 && s16===14 && MUS.int>0.5) cymbal(L.drum,t+STEP*2,0.05);
   // brass melody (one phrase per chord)
   if(st%32===0 && MUS.int>0.45){
-    let off=0; for(const [m,len] of MELODY[ci]){ brass(L.brass,m,t+off*STEP,len*STEP*0.95,0.045); brass(L.brass,m-12,t+off*STEP,len*STEP*0.95,0.025); off+=len; }
+    let off=0; for(const [m,len] of MELODY[ci]){ brass(L.brass,m,t+off*STEP,len*STEP*0.95,0.05); if(!LITE_AUDIO) brass(L.brass,m-12,t+off*STEP,len*STEP*0.95,0.025); off+=len; }
   }
 }
 function musSchedule(){
   if(!actx || !MUS.playing) return;
+  if(!MUS.on){ MUS.nextT=actx.currentTime+0.05; return; }   // music switched off: don't spend any sound power on it
   if(MUS.nextT<actx.currentTime) MUS.nextT=actx.currentTime+0.05;
   while(MUS.nextT<actx.currentTime+0.2){ musStep(MUS.step,MUS.nextT); MUS.nextT+=STEP; MUS.step=(MUS.step+1)%128; }
 }
@@ -3364,7 +3379,7 @@ function startGame(){
   hideMenus(); $('hud').style.display='block';
   $('side').textContent=SIDES[selSide].title+' · '+(isTankMap()&&ptank?ptank.T.name:W.name)+' · '+MAPS[currentMap].short;
   $('side').style.color=SIDES[selSide].color;
-  state='paused'; $('pause').style.display='flex';
+  state='paused'; $('pause').style.display='flex'; showAudioInfo();
   buildCrosshair();
 }
 // Mouse lock. If the browser/preview blocks it, fall back to "cursor mode".
@@ -3396,7 +3411,14 @@ document.addEventListener('pointerlockchange',()=>{
   if(locked){ lockPending=false; cursorMode=false; if(state==='paused') enterPlay(); }
   else if(state==='playing' && !cursorMode){ pauseGame(); }
 });
-function pauseGame(){ state='paused'; $('pause').style.display='flex'; mouseDown=rmb=false; document.body.style.cursor='default'; }
+function pauseGame(){ state='paused'; $('pause').style.display='flex'; mouseDown=rmb=false; document.body.style.cursor='default'; showAudioInfo(); }
+function showAudioInfo(){
+  const el=$('audioInfo'); if(!el) return;
+  if(!actx){ el.textContent=''; return; }
+  const ms=Math.round(((actx.baseLatency||0)+(actx.outputLatency||0))*1000);
+  el.innerHTML=`Sound delay reported by your browser: ${ms?ms+' ms':'unknown'} · ${LITE_AUDIO?'light':'full'} sound mode · ${actx.state}`+
+    (ms>150?'<br>That is high. It comes from your device or browser, not the game. Try another browser (Chrome), close other tabs, or turn music off (M).':'');
+}
 addEventListener('keydown',e=>{ if(e.code==='Escape' && state==='playing' && cursorMode) pauseGame(); });
 addEventListener('mousemove',e=>{ mouseX=e.clientX; });
 $('deploy').onclick=()=>startMission(briefMission);
