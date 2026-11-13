@@ -172,10 +172,16 @@
   .pickRow button,#squadPick button{padding:6px 12px;background:rgba(18,18,16,.85);color:#e8e2d0;border:2px solid #555;font:13px 'Courier New',monospace;cursor:pointer}
   .pickRow button.sel{border-color:#e2d8bd}
   #duelCode{font:bold 24px 'Courier New',monospace;letter-spacing:6px;width:150px;padding:8px;text-align:center;text-transform:uppercase;background:#1b1a17;color:#ffd23a;border:2px solid #777;user-select:text;-webkit-user-select:text;touch-action:auto}
+  #coopMenu{background:radial-gradient(ellipse at center,rgba(30,28,24,.6),rgba(5,5,5,.93))}
+  #coopCode{font:bold 24px 'Courier New',monospace;letter-spacing:6px;width:150px;padding:8px;text-align:center;text-transform:uppercase;background:#1b1a17;color:#ffd23a;border:2px solid #777;user-select:text;-webkit-user-select:text;touch-action:auto}
+  #coopStatus{margin:10px 0;min-height:22px;text-align:center;font-size:15px;max-width:92vw}
   #duelStatus{margin:10px 0;min-height:22px;text-align:center;font-size:15px;max-width:92vw}
   #squadPick{margin:4px 0 6px;font-size:13px;text-align:center}
   #squadPick button{margin:2px 3px;padding:5px 10px;background:rgba(18,18,16,.85);color:#e8e2d0;border:2px solid #555;font:12px 'Courier New',monospace;cursor:pointer}
   #squadPick button.sel{border-color:#e2d8bd}
+  #supp{position:absolute;inset:0;opacity:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 38%,rgba(0,0,0,.92) 100%);pointer-events:none}
+  #frost{position:absolute;inset:0;opacity:0;pointer-events:none;transition:opacity 2s;
+    background:radial-gradient(ellipse at center,rgba(255,255,255,0) 55%,rgba(220,235,250,.55) 85%,rgba(240,248,255,.9) 100%)}
   #err{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:#111;color:#e88;font-size:18px;padding:40px;text-align:center;z-index:99}
 </style>
 </head>
@@ -197,6 +203,7 @@
   <div id="menuBtns">
     <button id="continueBtn" class="big" style="display:none"></button>
     <button id="duelBtn" class="big">⚔ 1v1 WITH A FRIEND</button>
+    <button id="coopJoinBtn" class="big">🤝 JOIN A FRIEND'S MISSION</button>
   </div>
   <button id="deleteSave" style="display:none;margin-top:8px;background:none;border:none;color:#a99;cursor:pointer;font:13px 'Courier New'">delete saved game</button>
   <div class="controls">
@@ -223,7 +230,7 @@
   <div id="weapons"></div>
   <div id="squadPick"></div>
   <div id="bTank"></div>
-  <div class="rowBtns"><button id="bBack" class="big">◀ BACK</button><button id="deploy" class="big">DEPLOY ▶</button></div>
+  <div class="rowBtns"><button id="bBack" class="big">◀ BACK</button><button id="coopBtn" class="big">🤝 PLAY WITH A FRIEND</button><button id="deploy" class="big">DEPLOY ▶</button></div>
 </div>
 
 <div id="debrief" class="overlay" style="display:none">
@@ -249,6 +256,15 @@
   <button id="duelBack" class="big">◀ BACK</button>
 </div>
 
+<div id="coopMenu" class="overlay" style="display:none">
+  <h1 id="coopTitle" style="font-size:36px">CO-OP</h1>
+  <div class="sub">PLAY THE CAMPAIGN TOGETHER · YOU BOTH EARN XP AND MEDALS</div>
+  <div id="coopJoinRow" class="rowBtns" style="align-items:center"><input id="coopCode" maxlength="5" placeholder="CODE" autocomplete="off"><button id="coopJoinGo" class="big">JOIN</button></div>
+  <div id="coopStatus"></div>
+  <div id="coopPick"></div>
+  <button id="coopBack" class="big">◀ BACK</button>
+</div>
+
 <div id="duelOver" class="overlay" style="display:none">
   <h1 id="doTitle">DUEL OVER</h1>
   <div id="doText" class="sub"></div>
@@ -260,6 +276,7 @@
   <button id="resume" class="big">CLICK TO PLAY</button>
   <button id="saveBtn" class="big">SAVE GAME</button>
   <button id="musicBtn" class="big">MUSIC: ON</button>
+  <button id="voicesBtn" class="big">VOICES: ON</button>
   <button id="testSnd" class="big" style="font-size:15px;padding:8px 22px">🔊 TEST SOUND</button>
   <div id="audioInfo" style="margin-top:10px;font-size:12px;opacity:.75;text-align:center;max-width:90vw;line-height:1.5"></div>
   <button id="toMenu" class="big">MAIN MENU</button>
@@ -280,6 +297,8 @@
   <div id="mapdone"></div>
   <div id="reloadTxt">RELOADING…</div>
   <div id="vig"></div>
+  <div id="supp"></div>
+  <div id="frost"></div>
   <div id="dmgdir"></div>
   <div id="waveInfo"></div>
   <div id="objBox"><div id="objTxt"></div><div id="objBar"><div id="objFill"></div></div></div>
@@ -1491,17 +1510,19 @@ function launchShell(){
   const ring=new THREE.Mesh(ringGeo,new THREE.MeshBasicMaterial({color:0xff3a20,transparent:true,opacity:0.5,depthWrite:false,fog:false}));
   ring.position.set(t.wall?t.pos.x+t.n.x*2:t.pos.x,0.08,t.wall?t.pos.z+t.n.z*2:t.pos.z); ring.visible=!t.wall; scene.add(ring);
   incoming.push({...t,t:fall,ring});
+  if(coopHost()) coopSend({t:'shell',p:arr(t.pos),w:t.wall?1:0,n:t.n?arr(t.n):null});
   const c=artCentre(), d=Math.hypot(t.pos.x-c.x,t.pos.z-c.z), v=Math.min(1,22/(d+6));
   tone(1500,380,fall,0.16*v+0.03,'sine'); tone(1530,390,fall,0.05*v,'triangle');      // the falling whistle
   if(d<15 && (state==='playing')) showMsg('⚠ SHELL INCOMING! RUN! GET AWAY FROM THE RED CIRCLE!',1.7);
 }
-function shellImpact(s){
+function shellImpact(s,fxOnly){
+  if(coopHost() && !fxOnly) coopSend({t:'simp',p:arr(s.pos),w:s.wall?1:0,n:s.n?arr(s.n):null});
   const p=s.wall ? s.pos.clone().addScaledVector(s.n,0.4) : s.pos.clone();
   spawnPuff(p.clone().add(new V3(0,0.8,0)),0xffb060,7,0.35,true,0);
   spawnPuff(p.clone().add(new V3(0,0.5,0)),0xfff0c0,4,0.18,true,0);
   for(let i=0;i<12;i++) spawnPuff(p.clone().add(new V3((Math.random()-.5)*3.5,0.5+Math.random()*3,(Math.random()-.5)*3.5)),0x3a3734,4.5+Math.random()*4,2.4+Math.random()*1.6,false,0.7);
   for(let i=0;i<12;i++) spawnPuff(p.clone().add(new V3((Math.random()-.5)*2,Math.random()*0.8,(Math.random()-.5)*2)),mapSnow&&!s.wall?0xffffff:0x6a5c4c,1.4+Math.random(),1,false,3+Math.random()*2.5);
-  boomLight.position.copy(p).add(new V3(0,1.5,0)); boomT=0.4;
+  boomLight.position.copy(p).add(new V3(0,1.5,0)); boomT=0.4; shellShock(p,16);
   if(s.wall){ // blast hole in the wall plus pock marks around it
     addBulletHole(s.pos,s.n,false,2.4+Math.random()*1.2);
     for(let i=0;i<6;i++){ const o=new V3(s.n.z*(Math.random()-.5)*3,(Math.random()-.5)*2.4,s.n.x*(Math.random()-.5)*3); addBulletHole(s.pos.clone().add(o),s.n,false,0.25+Math.random()*0.5); }
@@ -1511,8 +1532,10 @@ function shellImpact(s){
   noise(1.9,900*(0.4+vol*0.6),1.0*vol,'lowpass',45); tone(62,22,0.9,1.0*vol); noise(0.35,3500,0.3*vol,'highpass');
   shakeT=Math.max(shakeT,Math.max(0,1.1-cd/40));
   // damage: hurts everyone (both sides) who is not behind cover
+  if(fxOnly) return;
   const centre=p.clone().add(new V3(0,0.5,0));
   const dmgAt=d=> d<3.5 ? 150 : Math.max(0,150*(1-(d-3.5)/5));
+  coopBlastPartner(centre,8.5,dmgAt);
   if(isTankMap()){
     for(const tk of tanks){ if(tk.dead) continue; const d=tk.pos.distanceTo(new V3(p.x,0,p.z)); if(d<5.5) damageTank(tk,d<2.5?22:10,null,false); }
     infSplash(p,null,8,150);
@@ -1529,9 +1552,9 @@ function updateArtillery(dt,t){
   for(let i=incoming.length-1;i>=0;i--){ const s=incoming[i]; s.t-=dt;
     s.ring.material.opacity=0.25+0.35*Math.abs(Math.sin(t*9)); s.ring.scale.setScalar(1+0.6*(s.t/1.7));
     if(s.t<=0){ shellImpact(s); scene.remove(s.ring); s.ring.material.dispose(); incoming.splice(i,1); } }
-  if(state!=='playing' || battle.done || protectT>0 || mapDoneT>0) return;
+  if(state!=='playing' || battle.done || protectT>0 || mapDoneT>0 || coopGuest()) return;
   artT-=dt;
-  if(artT<=0 && barrageLeft<=0){ barrageLeft=3+((Math.random()*4)|0); barrageT=1.2; artT=26+Math.random()*26; showMsg('⚠ ARTILLERY! TAKE COVER!',2); }
+  if(artT<=0 && barrageLeft<=0){ barrageLeft=3+((Math.random()*4)|0); barrageT=1.2; artT=26+Math.random()*26; showMsg('⚠ ARTILLERY! TAKE COVER!',2); if(!isTankMap()) squadShout('arty',true); }
   if(barrageLeft>0){ barrageT-=dt; if(barrageT<=0){ barrageT=0.7+Math.random()*1.5; barrageLeft--; launchShell(); } }
 }
 
@@ -2093,7 +2116,7 @@ function bulletTrace(origin,dir,maxDist,ignore){
     if(_bray.intersectBox(c,_bp)){ const d=_bp.distanceTo(origin); if(d>0.05 && d<best.dist){ best={dist:d,point:_bp.clone(),normal:boxNormal(c,_bp),soldier:null,head:false,ground:false}; } }
   }
   if(dir.y<-1e-4){ const t=-origin.y/dir.y; if(t<best.dist){ best={dist:t,point:origin.clone().addScaledVector(dir,t),normal:new V3(0,1,0),soldier:null,head:false,ground:true}; } }
-  const roots=[]; for(const s of [...mates,...enemies,...(remoteAv&&isDuel()?[remoteAv]:[])]) if(!s.dead && s!==ignore) roots.push(s.root);
+  const roots=[]; for(const s of [...mates,...enemies,...(remoteAv&&isDuel()?[remoteAv]:[]),...(coopGuest()?puppets.values():[])]) if(!s.dead && s!==ignore) roots.push(s.root);
   _rc.set(origin,dir); _rc.far=best.dist;
   const hits=_rc.intersectObjects(roots,true);
   if(hits.length){
@@ -2163,6 +2186,8 @@ function throwGrenade(){
   const vel=dir.clone().multiplyScalar(15.5).add(new V3(0,3.2,0)).add(new V3(player.vel.x,0,player.vel.z).multiplyScalar(0.5));
   grenades.push({m,pos:m.position,vel,fuse:2.6,spin:new V3(Math.random()*12-6,Math.random()*6,Math.random()*12-6),owner:'player'});
   if(isDuel()) duelSend({t:'nade',p:arr(m.position),v:arr(vel),f:2.6});
+  if(coopHost()) coopSend({t:'nade',p:arr(m.position),v:arr(vel),f:2.6});
+  if(coopGuest()){ grenades[grenades.length-1].owner='fx'; coopSend({t:'gnade',p:arr(m.position),v:arr(vel),f:2.6}); }
   sndClick(0,900,0.3); noise(0.18,1400,0.12,'bandpass',null,0.05);
 }
 const _gq=new V3();
@@ -2184,7 +2209,7 @@ function updateGrenades(dt){
     if(p.y<0.06){ p.y=0.06; if(Math.abs(v.y)>2.5) noise(0.05,900,0.06,'bandpass'); v.y*=-0.3; v.x*=0.7; v.z*=0.7; }
     const spd=v.length();
     g.m.rotation.x+=g.spin.x*dt*Math.min(1,spd/3); g.m.rotation.z+=g.spin.z*dt*Math.min(1,spd/3);
-    if(g.fuse<=0){ scene.remove(g.m); grenades.splice(i,1); explode(p.clone(),g.owner); }
+    if(g.fuse<=0){ scene.remove(g.m); grenades.splice(i,1); explode(p.clone(),g.owner,g.owner==='fx'); }
   }
   throwCD=Math.max(0,throwCD-dt); throwT=Math.max(0,throwT-dt);
   if(boomT>0){ boomT-=dt; boomLight.intensity=Math.max(0,boomT/0.3)*140; } else boomLight.intensity=0;
@@ -2195,21 +2220,23 @@ function explosionBlocked(a,b){
   for(const c of colliders){ if(c.noBullet) continue; if(_bray.intersectBox(c,_bp) && _bp.distanceTo(a)<d-0.35 && _bp.distanceTo(a)>0.1) return true; }
   return false;
 }
-function explode(p,owner){
+function explode(p,owner,fxOnly){
   const up=new V3(0,1,0);
   // fireball, smoke, snow/dirt thrown up
   spawnPuff(p.clone().add(new V3(0,0.6,0)),0xffb060,5,0.32,true,0);
   spawnPuff(p.clone().add(new V3(0,0.4,0)),0xfff0c0,3,0.15,true,0);
   for(let i=0;i<9;i++) spawnPuff(p.clone().add(new V3((Math.random()-.5)*2.4,0.4+Math.random()*1.8,(Math.random()-.5)*2.4)),0x3a3734,3.5+Math.random()*3,2+Math.random()*1.5,false,0.6);
   for(let i=0;i<10;i++) spawnPuff(p.clone().add(new V3((Math.random()-.5)*1.5,Math.random()*0.6,(Math.random()-.5)*1.5)),Math.random()<.5?0xffffff:0x6a5c4c,1.2+Math.random(),0.9,false,2.5+Math.random()*2);
-  boomLight.position.copy(p).add(new V3(0,1,0)); boomT=0.3;
+  boomLight.position.copy(p).add(new V3(0,1,0)); boomT=0.3; shellShock(p,12);
   addBulletHole(new V3(p.x,Math.max(0,p.y-0.06),p.z),up,true,2.4);
   const cd=p.distanceTo(camera.position), vol=Math.min(1,14/(cd+4));
   noise(1.5,1100*(0.4+vol*0.6),1.0*vol,'lowpass',60); tone(75,28,0.7,0.9*vol); noise(0.3,4000,0.25*vol,'highpass');
   shakeT=Math.max(shakeT,Math.max(0,1-cd/30));
   // damage everyone in range who isn't shielded by cover
+  if(fxOnly) return;                      // a co-op friend only sees the blast; the host works out the damage
   const centre=p.clone().add(new V3(0,0.3,0));
   const dmgAt=d=> d<3 ? 130 : Math.max(0,130*(1-(d-3)/4));
+  coopBlastPartner(centre,7,dmgAt);
   if(!playerDead){
     const chest=player.pos.clone().add(new V3(0,1.0,0)), d=centre.distanceTo(chest);
     if(d<7 && !explosionBlocked(centre,chest)) damagePlayer(dmgAt(d),p);
@@ -2219,6 +2246,7 @@ function explode(p,owner){
     const chest=s.pos.clone().add(new V3(0,1.0,0)), d=centre.distanceTo(chest);
     if(d>=7 || explosionBlocked(centre,chest)) continue;
     const killed=damageSoldier(s,dmgAt(d),owner==='player'?playerTarget:null);
+    if(killed && owner==='partner' && s.team==='enemy') coopSend({t:'killed',nid:nidOf(s),h:0});
     if(killed && owner==='player' && s.team==='enemy'){ kills++; mstats.kills++; showMsg('GRENADE KILL!',1.2); }
   }
   alertByGunshot(p);
@@ -2253,10 +2281,11 @@ function initAI(s,team,mode){
   s.weaponObj.userData.muzzle.add(fl); s.muzzleFlash=fl; s.flashT=0;
 }
 const playerTarget={isPlayer:true};
-function targetPoint(t){ return t.isPlayer ? camera.position.clone().add(new V3(0,-0.3,0)) : t.pos.clone().add(new V3(0,1.25-0.5*(t.crouchK||0),0)); }
+function targetPoint(t){ if(t.isPartner) return t.pos.clone().add(new V3(0,1.5-0.55*(t.crouchK||0),0));
+  return t.isPlayer ? camera.position.clone().add(new V3(0,-0.3,0)) : t.pos.clone().add(new V3(0,1.25-0.5*(t.crouchK||0),0)); }
 function targetPos(t){ return t.isPlayer ? player.pos : t.pos; }
 function opponentsOf(s){
-  if(s.team==='enemy'){ const l=mates.filter(m=>!m.dead); if(!playerDead) l.push(playerTarget); return l; }
+  if(s.team==='enemy'){ const l=mates.filter(m=>!m.dead); if(!playerDead) l.push(playerTarget); if(coopHost() && partner && !partnerTarget.dead) l.push(partnerTarget); return l; }
   return enemies.filter(e=>!e.dead);
 }
 function aiThink(s){
@@ -2270,6 +2299,7 @@ function aiThink(s){
     best=o; bd=d;
   }
   if(best){
+    if(ai.state!=='combat'){ callout(sideOf(s.team),'spot',s.pos); }
     if(ai.state!=='combat' || !ai.seen){ ai.react = (s.team==='enemy'?0.5:0.25)+Math.random()*0.5; if(s.team==='enemy'&&ai.state!=='combat'){ s.alertT=1.3; } }
     ai.state='combat'; ai.target=best; ai.seen=true; ai.lostT=0; ai.lastSeen.copy(targetPos(best));
   } else {
@@ -2301,7 +2331,7 @@ function aiFire(s){
   } else if(t.speed>2) chance*=0.7;
   if(s.speed>1) chance*=0.6;
   chance=Math.max(0.03,Math.min(s.team==='ally'?0.55:0.45,chance));
-  s.ai.ammo--; if(s.ai.ammo<=0){ s.ai.reloadT=W.reload*1.15; s.ai.burst=0; const cd=s.pos.distanceTo(camera.position); if(cd<25) play(SB.magOut,0.5*Math.min(1,5/(cd+1))); }
+  s.ai.ammo--; if(s.ai.ammo<=0){ s.ai.reloadT=W.reload*1.15; s.ai.burst=0; if(Math.random()<0.5) callout(sideOf(s.team),'reload',s.pos); const cd=s.pos.distanceTo(camera.position); if(cd<25) play(SB.magOut,0.5*Math.min(1,5/(cd+1))); }
   const hit=Math.random()<chance;
   const aim = hit ? tp : tp.clone().add(new V3((Math.random()-.5)*2.6,(Math.random()-.4)*1.5,(Math.random()-.5)*2.6));
   const dir=aim.clone().sub(muzzle).normalize();
@@ -2309,23 +2339,22 @@ function aiFire(s){
   let end=tr.point?tr.point:muzzle.clone().addScaledVector(dir,dist+25);
   let landed=false;
   if(hit){
-    if(t.isPlayer) landed = !tr.point || tr.dist>dist-0.45;     // nothing in the way
+    if(t.isPlayer || t.isPartner) landed = !tr.point || tr.dist>dist-0.45;     // nothing in the way
     else landed = tr.soldier===t;
-    if(landed && t.isPlayer) end=tp;
+    if(landed && (t.isPlayer || t.isPartner)) end=tp;
   }
   if(!landed){
     if(tr.soldier && tr.soldier.team!==s.team){ damageSoldier(tr.soldier,hitDamage(s.team,W).dmg,s); landed=true; } // stray hit
     bulletImpact(tr);
-    if(t.isPlayer){ // close call?
-      const toCam=camera.position.clone().sub(muzzle), along=toCam.dot(dir);
-      if(along>0 && along<(tr.point?tr.dist:999) && toCam.clone().sub(dir.clone().multiplyScalar(along)).length()<2.5) sndWhizz();
-    }
+    if(s.team==='enemy' && nearMiss(muzzle,dir,tr.point?tr.dist:dist+25)) sndWhizz();   // close call: whizz + suppression
   }
   const g=new THREE.BufferGeometry().setFromPoints([muzzle,end]); const ln=new THREE.Line(g,tracerMat); scene.add(ln); tracers.push({ln,t:0.05});
   s.flashT=0.05; s.muzzleFlash.visible=true; s.muzzleFlash.material.rotation=Math.random()*3;
   const cd=muzzle.distanceTo(camera.position);
   sndShot(W.heavy, Math.min(1,6/(cd+2)));
-  if(hit && landed && (t.isPlayer || tr.soldier===t)){
+  coopShot(muzzle,end,W.heavy,s.team);
+  if(hit && landed && t.isPartner){ const {dmg,head}=hitDamage(s.team,W); coopSend({t:'hurt',d:dmg,h:head?1:0,f:arr(s.pos)}); }
+  else if(hit && landed && (t.isPlayer || tr.soldier===t)){
     const {dmg,head}=hitDamage(s.team,W);
     if(t.isPlayer){ if(head && protectT<=0) lastHeadshot=true; damagePlayer(dmg,s.pos); } else damageSoldier(t,dmg,s);
   }
@@ -2342,6 +2371,7 @@ function damageSoldier(s,dmg,attacker){
 }
 function killSoldier(s){
   if(s.team==='enemy' && !s.dead) setTimeout(onEnemyKilled,0);
+  if(s.team==='ally' && !s.dead) setTimeout(()=>squadShout('medic'),400);
   s.dead=true; s.deadT=0; s.speed=0; s.fallDir=Math.random()<0.5?1:-1;
   const i=shootables.indexOf(s.root); if(i>=0) shootables.splice(i,1);
   s.root.children.forEach(c=>{ if(c.isSprite) c.visible=false; });
@@ -2349,6 +2379,7 @@ function killSoldier(s){
 }
 function damagePlayer(dmg,from){
   if(playerDead || protectT>0) return;
+  suppressHit(0.3);
   playerHP-=dmg; lastHurt=0; hurtT=Math.min(1,hurtT+dmg/40);
   noise(0.08,500,0.35,'lowpass'); 
   const a=Math.atan2(from.x-player.pos.x,from.z-player.pos.z); // world angle to attacker
@@ -2359,6 +2390,11 @@ function damagePlayer(dmg,from){
 let deathReason=null;
 function playerDies(){
   if(isDuel()){ if(!playerDead) duelPlayerDied(); return; }
+  if(coopHost() && !coop.failed){ if(!playerDead) coopHostDown(); return; }
+  if(coopGuest()){ if(!playerDead) coopGuestDown(); return; }
+  realPlayerDies();
+}
+function realPlayerDies(){
   mstats.deaths++;
   playerDead=true; state='dead'; mouseDown=rmb=false;
   sting('death'); musicStop(2);
@@ -2480,7 +2516,7 @@ function aiThrowGrenade(s,tp){
   const vel=new V3((aimX-from.x)/T,(0.06-from.y+0.5*14*T*T)/T,(aimZ-from.z)/T);
   const m=makeGrenadeMesh(s.side); m.position.copy(from); scene.add(m);
   grenades.push({m,pos:m.position,vel,fuse:2.4,spin:new V3(Math.random()*12-6,Math.random()*6,Math.random()*12-6),owner:s.team==='ally'?'mate':'enemy'});
-  s.ai.nades--; s.flinch=0.6;
+  s.ai.nades--; s.flinch=0.6; if(coopHost()) coopSend({t:'nade',p:arr(from),v:arr(vel),f:2.4}); callout(sideOf(s.team),'grenade',s.pos,true);
   if(s.team==='enemy' && player.pos.distanceTo(tp)<9) setTimeout(()=>{ if(state==='playing') showMsg('⚠ GRENADE! MOVE!',1.6); },350);
 }
 function friendsNear(s,p,r){ const list=s.team==='ally'?[...mates,(playerDead?null:playerTarget)]:enemies; for(const o of list){ if(!o || o===s || o.dead) continue; const op=o.isPlayer?player.pos:o.pos; if(Math.hypot(op.x-p.x,op.z-p.z)<r) return true; } return false; }
@@ -3001,7 +3037,7 @@ function infSplash(p,owner,radius,maxDmg){
 }
 function fireRocket(s,tk){
   const m=new V3(); s.muzzleObj.getWorldPosition(m);
-  const aim=tk.pos.clone().addScaledVector(tk.vel,m.distanceTo(tk.pos)/ROCKET_SPEED).add(new V3(0,1.0,0));
+  const aim=tk.pos.clone().addScaledVector(tk.vel,m.distanceTo(tk.pos)/ROCKET_SPEED).add(new V3(0,0.65,0));
   const d=m.distanceTo(aim), tf=d/ROCKET_SPEED; aim.y+=0.5*ROCKET_G*tf*tf;
   const dir=aim.sub(m).normalize(); dir.x+=(Math.random()-.5)*0.05; dir.y+=(Math.random()-.5)*0.03; dir.z+=(Math.random()-.5)*0.05; dir.normalize();
   const spr=new THREE.Sprite(shellMat); spr.scale.setScalar(0.5); spr.position.copy(m); scene.add(spr);
@@ -3034,7 +3070,7 @@ function infThink(s){
     const d=s.pos.distanceTo(o.pos); if(d>75 || d>bd) continue;
     if(!lineOfSight(eye,o.pos.clone().add(new V3(0,1.2,0)))) continue; best=o; bd=d; }
   ai.seen=!!best;
-  if(best){ if(ai.target!==best) ai.shotT=Math.max(ai.shotT,0.4+Math.random()*0.5); ai.target=best; }
+  if(best){ if(ai.target!==best){ ai.shotT=Math.max(ai.shotT,0.4+Math.random()*0.5); if(best.hull) callout(sideOf(s.team),'tank',s.pos); } ai.target=best; }
   else if(ai.target && (ai.target.dead || s.pos.distanceTo(ai.target.pos)>95)) ai.target=null;
 }
 function updateInfantry(dt,t){
@@ -3250,7 +3286,7 @@ function updateTankAI(tk,dt){
     ai.holdT-=dt; if(ai.holdT<0 && tk.pos.distanceTo(ai.goal)<6) ai.goal=null;
     goal = ai.holdT>0 ? null : ai.goal;
     // aim with lead, fire when lined up
-    const lead=t.pos.clone().addScaledVector(t.vel,d/SHELL_SPEED).add(new V3(0,1.2,0));
+    const lead=t.pos.clone().addScaledVector(t.vel,d/SHELL_SPEED).add(new V3(0,t.hull?0.75:1.0,0));   // centre of the hull, well below the turret ring
     const err=aimTankAt(tk,lead,dt);
     if(ai.seen && err<(tk.onFire?0.12:0.05) && tk.reloadT<=0 && protectT<=0) fireShell(tk);
     if(tk.noBarrel){ const away=tk.pos.clone().sub(t.pos).setY(0).normalize(); goal=tk.pos.clone().addScaledVector(away,30); goal.x=Math.max(-62,Math.min(62,goal.x)); goal.z=Math.max(-62,Math.min(62,goal.z)); }
@@ -3346,7 +3382,7 @@ function startMoscowPhase2(){
 }
 function updateMoscowHold(dt,t){
   if(currentMap!=='moscow' || moscowPhase!==2 || !moscowObj) return;
-  const friends=(!playerDead && inMZone(player.pos)?1:0)+mates.filter(m=>!m.dead && inMZone(m.pos)).length;
+  const friends=(!playerDead && inMZone(player.pos)?1:0)+mates.filter(m=>!m.dead && inMZone(m.pos)).length+(coopHost()&&partner&&!partnerTarget.dead&&inMZone(partner.pos)?1:0);
   const foes=enemies.filter(e=>!e.dead && inMZone(e.pos)).length;
   if(!battle.done && state==='playing'){
     if(protectT<=0) mhold.t=Math.max(0,mhold.t-dt);
@@ -3431,6 +3467,7 @@ function initAudio(){
     try{ actx=new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'}); }catch(e){ return; }
     master=actx.createDynamicsCompressor(); master.threshold.value=-10; master.knee.value=6; master.ratio.value=4;
     master.attack.value=0.002; master.release.value=0.15; master.connect(actx.destination);
+    setTimeout(setupShockAudio,0);
     noiseBuf=actx.createBuffer(1,actx.sampleRate*0.6,actx.sampleRate); const d=noiseBuf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
     buildSounds();
   }
@@ -3459,7 +3496,7 @@ function buildReloadSounds(){
   SB.panOff=metal(0.25,800,24,1.0,0.5); SB.panOn=metal(0.28,950,22,1.1,0.8);
 }
 function buildSounds(){
-  buildReloadSounds();
+  buildReloadSounds(); buildBodySounds();
   SB.rifle=gunshot(0.6,7,3200,260,0.9,120);
   SB.smg=gunshot(0.28,16,4200,320,0.6,170);
   SB.click=synth(0.045,(d,sr,n)=>{ let y=0; for(let i=0;i<n;i++){ const t=i/sr,x=Math.random()*2-1; y+=0.5*(x-y); d[i]=(x-y)*Math.exp(-t*110); } });
@@ -3495,7 +3532,7 @@ function tone(f0,f1,dur,vol,type='sine',delay=0){
 const sndShot=(h,v=1)=>play(h?SB.rifle:SB.smg,(h?0.95:0.7)*v);
 const sndWhizz=()=>play(SB.whizz,0.25,0.8+Math.random()*0.5);
 const sndClick=(d=0,f=2200,v=0.2)=>play(SB.click,v*1.6,f/2000,d);
-const sndStep=sprint=>play(SB.step,sprint?0.35:0.22,0.8+Math.random()*0.4);
+const sndStep=sprint=>{ const g=groundType(), b={snow:SB.stepSnow,mud:SB.stepMud,rubble:SB.stepRubble,wood:SB.stepWood}[g]||SB.step; play(b,(sprint?0.42:0.26)*(g==='wood'?0.8:1),0.85+Math.random()*0.3); };
 const sndLand=()=>play(SB.land,0.5);
 // keep the audio engine awake (browsers can suspend it)
 addEventListener('mousedown',()=>{ if(actx && actx.state!=='running') actx.resume(); });
@@ -3774,6 +3811,7 @@ function fire(){
   const r=W.recoil*(1-gun.ads*0.5)*(player.crouch?0.7:1);
   player.pitch+=r; player.recoilAcc+=r; player.yaw+=(Math.random()-.5)*r*0.5;
   gun.kick=1; gun.flash=0.05; sndShot(W.heavy); alertByGunshot(player.pos);
+  ejectCasing(W.bolt?W.rate*0.33:0);
   if(W.bolt){ play(SB.boltUp,0.4,1,W.rate*0.15); play(SB.boltBack,0.45,1,W.rate*0.3); play(SB.boltFwd,0.45,1,W.rate*0.5); play(SB.boltUp,0.3,0.8,W.rate*0.62); }
   // bullet
   const hs=Math.hypot(player.vel.x,player.vel.z);
@@ -3782,14 +3820,18 @@ function fire(){
   const tr=bulletTrace(ray.ray.origin.clone(),ray.ray.direction.clone(),200,null);
   const s=tr.soldier;
   if(isDuel()){ const end=tr.point?tr.point:ray.ray.origin.clone().addScaledVector(ray.ray.direction,200); duelSend({t:'fire',e:arr(end),w:W.heavy?1:0}); }
-  if(s && s.remote){ duelSend({t:'hit',d:pvpDamage(W,tr.head),h:tr.head?1:0}); hitTimer=0.15; $('hit').classList.toggle('kill',false); if(tr.head) showMsg('HEADSHOT!',0.6); }
+  if(isCoop()){ const end=tr.point?tr.point:ray.ray.origin.clone().addScaledVector(ray.ray.direction,200);
+    if(coopHost()) coopShot(camera.position.clone().add(new V3(0,-0.15,0)),end,W.heavy,'ally'); else coopSend({t:'gfire',e:arr(end),w:W.heavy?1:0}); }
+  if(s && s.puppet){ if(s.team==='ally'){ showMsg('HOLD YOUR FIRE! FRIENDLY!'); s.flinch=1; }
+    else { coopSend({t:'hit',nid:s.nid,d:(W.dmg ?? (W.bolt?100:50))*(tr.head?2:1),h:tr.head?1:0}); hitTimer=0.15; $('hit').classList.toggle('kill',false); } }
+  else if(s && s.remote){ duelSend({t:'hit',d:pvpDamage(W,tr.head),h:tr.head?1:0}); hitTimer=0.15; $('hit').classList.toggle('kill',false); if(tr.head) showMsg('HEADSHOT!',0.6); }
   else if(s){
     if(mates.includes(s)){ showMsg('HOLD YOUR FIRE! FRIENDLY!'); s.flinch=1; s.flinchDir=Math.random()<.5?-1:1; }
     else {
       const dmg=(W.dmg ?? (W.bolt?100:50))*(tr.head?2:1);
       const killed=damageSoldier(s,dmg,playerTarget);
       hitTimer=0.15; $('hit').classList.toggle('kill',killed);
-      if(killed){ kills++; mstats.kills++; if(tr.head) mstats.heads++; showMsg(tr.head?'HEADSHOT! ENEMY DOWN':'ENEMY DOWN',1.2); tone(900,1200,0.08,0.15,'square'); }
+      if(killed){ kills++; mstats.kills++; if(tr.head) mstats.heads++; if(Math.random()<0.3) setTimeout(()=>squadShout('kill'),500); showMsg(tr.head?'HEADSHOT! ENEMY DOWN':'ENEMY DOWN',1.2); tone(900,1200,0.08,0.15,'square'); }
     }
   }
   bulletImpact(tr);
@@ -3952,7 +3994,7 @@ const MISSION_INFO={
   berlin:{n:'V',mode:'On foot · storm / hold the Reichstag',color:'#d09a7a'}
 };
 let briefMission='stalingrad';
-function hideMenus(){ for(const id of ['menu','missions','briefing','debrief','duelMenu','duelOver']) $(id).style.display='none'; }
+function hideMenus(){ for(const id of ['menu','missions','briefing','debrief','duelMenu','duelOver','coopMenu']) $(id).style.display='none'; }
 function previewMap(id){
   moscowPhase=1;
   if(currentMap!==id){ leaveTankMode(); clearSoldiers(); buildMap(id); visCols=null; }
@@ -3985,6 +4027,7 @@ function showBriefing(id){
   $('bObj').innerHTML='<b>OBJECTIVE</b> · '+st.obj;
   const mode=MAPS[id].mode, tank=mode==='tank', tankName=selSide==='soviet'?'T-34/76':'Panzer IV';
   $('weapons').style.display=tank?'none':'flex';
+  $('coopBtn').style.display=tank?'none':'';
   $('bTank').style.display=mode==='infantry'?'none':'block';
   $('bTank').textContent = tank ? `Your tank: ${tankName} · WASD drive · mouse aims · click cannon · Space machine gun · Q gunner sight`
     : mode==='mixed' ? `Part 1 in your ${tankName} (WASD drive · mouse aims · click cannon · Space MG). Part 2 on foot with the weapon you pick below.` : '';
@@ -3997,12 +4040,13 @@ function renderSquadPick(mode){
   el.querySelectorAll('button').forEach(b=>b.onclick=()=>{ SQUAD_MATES=+b.dataset.n; buildForm(SQUAD_MATES); try{ localStorage.setItem('ef_squad',SQUAD_MATES); }catch(e){} renderSquadPick(mode); spawnWorld(selSide,selWeapon,true); });
 }
 function showDebrief(){
+  if(isCoop()) closeCoop(false);
   const id=currentMap, st=STORY[selSide][id];
   const firstStal = id==='stalingrad';
   hideMenus(); $('hud').style.display='none'; $('mapdone').style.opacity=0;
   state='menu'; mouseDown=rmb=false; document.body.style.cursor='default';
   if(document.pointerLockElement) document.exitPointerLock();
-  musicStop(3); resetArtillery();
+  musicStop(3); resetArtillery(); clearPlanes(); shock=0; suppress=0;
   leaveTankMode(); moscowPhase=1; setSpawn(); resetAtmosphere(); spawnWorld(selSide,selWeapon,true);
   $('dTitle').textContent=`${MAPS[id].short} · MISSION COMPLETE`;
   $('dText').innerHTML=st.debrief.map(p=>`<p>${p}</p>`).join('');
@@ -4015,7 +4059,7 @@ function startMission(id){
   if(d && (d.killed||0)>0 && !confirm(`Start this mission? Your saved game (${MAPS[d.map].short}, ${(MAPS[d.map].total||50)-(d.killed||0)} enemies left) will be replaced.`)) return;
   initAudio();
   if(currentMap!==id){ clearSoldiers(); buildMap(id); visCols=null; }
-  hideMenus(); resetMissionStats(); moscowPhase=1;
+  hideMenus(); resetMissionStats(); moscowPhase = (isCoop() && id==='moscow') ? 2 : 1;   // co-op Moscow starts at the on-foot part
   checkpoint=null; startGame(); writeSave(true); lockPointer();
 }
 
@@ -4057,8 +4101,8 @@ function resetObjective(){
 }
 const inZone=p=>p.x>RZONE.x0 && p.x<RZONE.x1 && p.z>RZONE.z0 && p.z<RZONE.z1;
 function updateObjective(dt,t){
-  if(!isBerlin() || !berlinObj) return;
-  const friends=(!playerDead && inZone(player.pos)?1:0)+mates.filter(m=>!m.dead && inZone(m.pos)).length;
+  if(!isBerlin() || !berlinObj || coopGuest()) return;
+  const friends=(!playerDead && inZone(player.pos)?1:0)+mates.filter(m=>!m.dead && inZone(m.pos)).length+(coopHost()&&partner&&!partnerTarget.dead&&inZone(partner.pos)?1:0);
   const foes=enemies.filter(e=>!e.dead && inZone(e.pos)).length;
   let label='';
   if(!battle.done && state==='playing'){
@@ -4324,7 +4368,7 @@ const pvpDamage=(W,head)=>(W.scope||W.bolt?100:W.dmg>=100?70:34)*(head?2:1);
 function startDuel(){
   hideMenus(); $('duelOver').style.display='none';
   if(currentMap!=='duel'){ leaveTankMode(); clearSoldiers(); buildMap('duel'); visCols=null; }
-  clearSoldiers(); leaveTankMode(); resetProps(); resetArtillery();
+  clearSoldiers(); leaveTankMode(); resetProps(); resetArtillery(); clearPlanes(); shock=0; suppress=0;
   for(const g of grenades) scene.remove(g.m); grenades.length=0;
   selSide=duelSide; selWeapon=duelWeapon;
   const W=WEAPONS[duelWeapon];
@@ -4381,8 +4425,8 @@ function remoteShot(end,heavy){
   const g=new THREE.BufferGeometry().setFromPoints([m,end]); const ln=new THREE.Line(g,tracerMat); scene.add(ln); tracers.push({ln,t:0.05});
   remoteAv.flashT=0.05; remoteAv.muzzleFlash.visible=true;
   sndShot(heavy, Math.min(1,8/(m.distanceTo(camera.position)+2)));
-  const dir=end.clone().sub(m).normalize(), toCam=camera.position.clone().sub(m), along=toCam.dot(dir);
-  if(along>0 && toCam.clone().sub(dir.clone().multiplyScalar(along)).length()<2.5) sndWhizz();
+  const dir=end.clone().sub(m).normalize();
+  if(nearMiss(m,dir,m.distanceTo(end)+2)) sndWhizz();
   spawnPuff(end,0x8a7e70,0.5);
 }
 function updateDuel(dt,t){
@@ -4416,11 +4460,511 @@ function updateDuel(dt,t){
   musicSetIntensity(0.55); musicUpdate(dt);
 }
 
+/* ================= IMMERSION: voices, shell shock, suppression, body sounds, casings, ambience ================= */
+// ---------- shouted callouts (browser speech) ----------
+const CALLS={
+  soviet:{grenade:['Граната!','Granata!'],reload:['Перезаряжаю!','Perezaryazhayu!'],spot:['Враг!','Vrag!'],tank:['Танки!','Tanki!'],
+          cover:['В укрытие!','V ukrytiye!'],forward:['Вперёд!','Vperyod!'],medic:['Санитар!','Sanitar!'],plane:['Воздух!','Vozdukh!'],
+          arty:['Артиллерия! Ложись!','Artilleriya! Lozhis!'],kill:['Готов!','Gotov!'],reloaded:['Готово!','Gotovo!']},
+  german:{grenade:['Granate!','Granate!'],reload:['Nachladen!','Nachladen!'],spot:['Feind gesichtet!','Feind gesichtet!'],tank:['Achtung, Panzer!','Achtung, Panzer!'],
+          cover:['Deckung!','Deckung!'],forward:['Vorwärts!','Vorwärts!'],medic:['Sanitäter!','Sanitäter!'],plane:['Flieger! Volle Deckung!','Flieger! Volle Deckung!'],
+          arty:['Artillerie! Runter!','Artillerie! Runter!'],kill:['Erwischt!','Erwischt!'],reloaded:['Fertig!','Fertig!']}
+};
+let voicesOn=true; try{ voicesOn=localStorage.getItem('ef_voices')!=='off'; }catch(e){}
+const synthOK=typeof speechSynthesis!=='undefined' && typeof SpeechSynthesisUtterance!=='undefined';
+let voiceRU=null, voiceDE=null, voiceEN=null, lastCallT=0; const callCD={};
+function pickVoices(){ if(!synthOK) return; const vs=speechSynthesis.getVoices()||[];
+  voiceRU=vs.find(v=>/^ru/i.test(v.lang))||null; voiceDE=vs.find(v=>/^de/i.test(v.lang))||null; voiceEN=vs.find(v=>/^en/i.test(v.lang))||null; }
+if(synthOK){ pickVoices(); try{ speechSynthesis.onvoiceschanged=pickVoices; }catch(e){} }
+function callout(side,key,pos,force){
+  if(!voicesOn || !synthOK || !actx || state==='menu') return;
+  const now=performance.now()/1000;
+  if(!force && (now-lastCallT<1.6 || now-(callCD[side+key]||0)<6)) return;
+  const d=pos?pos.distanceTo(camera.position):5; if(d>45) return;
+  if(speechSynthesis.speaking && !force) return;
+  const pair=(CALLS[side]||CALLS.soviet)[key]; if(!pair) return;
+  const native = side==='soviet'?voiceRU:voiceDE, u=new SpeechSynthesisUtterance(native?pair[0]:pair[1]);
+  if(native){ u.voice=native; u.lang=native.lang; } else if(voiceEN){ u.voice=voiceEN; u.lang=voiceEN.lang; }
+  u.volume=Math.max(0.15,Math.min(1,8/(d+6))); u.rate=1.15+Math.random()*0.15; u.pitch=0.75+Math.random()*0.45;
+  try{ speechSynthesis.speak(u); }catch(e){}
+  lastCallT=now; callCD[side+key]=now;
+}
+const sideOf=team=>team==='ally'?selSide:(selSide==='soviet'?'german':'soviet');
+function squadShout(key,force){ const m=mates.find(x=>!x.dead); callout(selSide,key,m?m.pos:player.pos,force); }
+
+// ---------- shell shock: muffled hearing, ringing ears, blurred eyes ----------
+let shock=0, ringOsc=null, ringGain=null, muffle=null;
+function setupShockAudio(){
+  if(!actx || muffle) return;
+  muffle=actx.createBiquadFilter(); muffle.type='lowpass'; muffle.frequency.value=20000; muffle.Q.value=0.6;
+  try{ master.disconnect(); }catch(e){} master.connect(muffle); muffle.connect(actx.destination);
+  ringOsc=actx.createOscillator(); ringOsc.type='sine'; ringOsc.frequency.value=3300; ringGain=actx.createGain(); ringGain.gain.value=0;
+  ringOsc.connect(ringGain); ringGain.connect(actx.destination); ringOsc.start();
+}
+function shellShock(p,radius=14){
+  if(isTankMap() || playerDead) return;
+  const d=p.distanceTo(player.pos.clone().add(new V3(0,1,0))); if(d>radius) return;
+  const k=Math.pow(1-d/radius,0.8); shock=Math.min(1,Math.max(shock,k*0.95));
+  if(ringGain) ringGain.gain.setTargetAtTime(0.045*shock,actx.currentTime,0.02);
+}
+// ---------- suppression: near misses ----------
+let suppress=0;
+function suppressHit(amount){ if(playerDead || isTankMap()) return; suppress=Math.min(1,suppress+amount); }
+function nearMiss(from,dir,maxLen){
+  const toCam=camera.position.clone().sub(from), along=toCam.dot(dir);
+  if(along<=0 || along>maxLen) return false;
+  const miss=toCam.clone().sub(dir.clone().multiplyScalar(along)).length();
+  if(miss<3.2){ suppressHit(0.32*(1-miss/3.2)+0.06); return miss<2.5; }
+  return false;
+}
+// ---------- heartbeat + breathing ----------
+let heartT=0, breathT=0;
+function buildBodySounds(){
+  SB.heart=synth(0.45,(d,sr,n)=>{ for(let i=0;i<n;i++){ const t=i/sr; const b=(t0)=>t>t0?Math.sin(2*Math.PI*48*(t-t0))*Math.exp(-(t-t0)*22):0; d[i]=b(0)+0.7*b(0.17); } });
+  SB.breath=synth(1.1,(d,sr,n)=>{ let y=0; for(let i=0;i<n;i++){ const t=i/sr, x=Math.random()*2-1; y+=0.08*(x-y); const env=Math.sin(Math.PI*Math.min(1,t/0.45))*(t<0.45?1:0)+0.8*Math.sin(Math.PI*Math.max(0,Math.min(1,(t-0.5)/0.55)))*(t>0.5?1:0); d[i]=y*env*1.6; } });
+  // footsteps on different ground
+  const step=(dur,cut,crunch,thud)=>synth(dur,(d,sr,n)=>{ let y=0,ph=0; for(let i=0;i<n;i++){ const t=i/sr,x=Math.random()*2-1; y+=cut*(x-y);
+    const gr = crunch? (Math.random()<0.02?x*2:0)*Math.exp(-t*25):0; ph+=2*Math.PI*90/sr; d[i]=(y+gr)*Math.exp(-t*(1/dur)*4)+Math.sin(ph)*thud*Math.exp(-t*40); } });
+  SB.stepSnow=step(0.16,0.35,true,0.1); SB.stepMud=step(0.14,0.08,false,0.35); SB.stepRubble=step(0.12,0.5,true,0.15); SB.stepWood=step(0.1,0.15,false,0.6);
+  SB.tink=metal(0.12,4200,55,0.2);
+}
+function groundType(){
+  const p=player.pos;
+  for(const r of roofZones) if(p.x>r[0] && p.x<r[2] && p.z>r[1] && p.z<r[3]) return currentMap==='kursk'?'wood':'rubble';
+  if(mapSnow) return 'snow';
+  return currentMap==='berlin' ? 'rubble' : 'mud';
+}
+// ---------- brass shell casings ----------
+const casings=[]; const casingGeo=new THREE.CylinderGeometry(0.006,0.006,0.035,6), casingMat=new THREE.MeshStandardMaterial({color:0xc8a040,metalness:.8,roughness:.35});
+function ejectCasing(delay=0){
+  const go=()=>{ if(isTankMap()) return;
+    const m=new THREE.Mesh(casingGeo,casingMat); const right=new V3(Math.cos(player.yaw),0,-Math.sin(player.yaw)), fwd=new V3(-Math.sin(player.yaw),0,-Math.cos(player.yaw));
+    m.position.copy(camera.position).addScaledVector(right,0.18).addScaledVector(fwd,0.35).add(new V3(0,-0.12,0)); scene.add(m);
+    casings.push({m,vel:right.clone().multiplyScalar(2.2+Math.random()).addScaledVector(fwd,-0.3).add(new V3(0,1.8+Math.random(),0)).add(new V3(player.vel.x,0,player.vel.z)),
+      spin:new V3(Math.random()*20,Math.random()*20,Math.random()*20),t:0,bounced:0});
+    if(casings.length>40){ const c=casings.shift(); scene.remove(c.m); } };
+  delay>0 ? setTimeout(go,delay*1000) : go();
+}
+function updateCasings(dt){
+  for(let i=casings.length-1;i>=0;i--){ const c=casings[i]; c.t+=dt;
+    if(c.bounced<2){ c.vel.y-=9.8*dt; c.m.position.addScaledVector(c.vel,dt); c.m.rotation.x+=c.spin.x*dt; c.m.rotation.z+=c.spin.z*dt;
+      if(c.m.position.y<0.01){ c.m.position.y=0.01; c.vel.y*=-0.35; c.vel.x*=0.5; c.vel.z*=0.5; c.bounced++;
+        if(!mapSnow) play(SB.tink,0.18*Math.min(1,3/(c.m.position.distanceTo(camera.position)+1)),0.9+Math.random()*0.3); if(c.bounced>=2) c.m.rotation.set(Math.PI/2,Math.random()*6,0); } }
+    if(c.t>6){ scene.remove(c.m); casings.splice(i,1); } }
+}
+// ---------- breath fog (winter maps) ----------
+const fogMat=new THREE.SpriteMaterial({map:smokeTex,color:0xffffff,transparent:true,opacity:0,depthWrite:false});
+const breaths=[]; let breathFogT=1;
+function updateBreathFog(dt,sprinting){
+  if(mapSnow && !isTankMap() && !playerDead && state==='playing'){
+    breathFogT-=dt*(sprinting||player.tired?2.2:1);
+    if(breathFogT<=0){ breathFogT=2.6+Math.random();
+      const fwd=new V3(-Math.sin(player.yaw),0,-Math.cos(player.yaw)), s=new THREE.Sprite(fogMat.clone());
+      s.position.copy(camera.position).addScaledVector(fwd,0.42).add(new V3(0,-0.16,0)); s.scale.setScalar(0.12); scene.add(s); breaths.push({s,t:0,v:fwd.clone().multiplyScalar(0.35).add(new V3(0,0.12,0))}); } }
+  for(let i=breaths.length-1;i>=0;i--){ const b=breaths[i]; b.t+=dt; b.s.position.addScaledVector(b.v,dt); b.s.scale.setScalar(0.12+b.t*0.5);
+    b.s.material.opacity=0.28*Math.sin(Math.min(1,b.t/1.4)*Math.PI); if(b.t>1.4){ scene.remove(b.s); b.s.material.dispose(); breaths.splice(i,1); } }
+}
+// ---------- distant war ----------
+let ambT=4;
+function distantWar(dt){
+  ambT-=dt; if(ambT>0) return; ambT=1.5+Math.random()*4.5;
+  const r=Math.random();
+  if(r<0.35){ const del=Math.random()*0.3; noise(2.5,180+Math.random()*120,0.12+Math.random()*0.1,'lowpass',40,del); tone(48,26,1.4,0.1,'sine',del); }       // far artillery
+  else if(r<0.65){ const n=6+((Math.random()*10)|0), rate=0.07+Math.random()*0.06, v=0.04+Math.random()*0.05;                                    // far machine gun
+    for(let i=0;i<n;i++) noise(0.06,700+Math.random()*300,v,'lowpass',null,i*rate); }
+  else if(r<0.8){ for(let i=0;i<4;i++) noise(0.05,1200,0.035,'bandpass',null,Math.random()*1.2); }                                                // rifle shots far off
+  else planeDrone(5+Math.random()*3,0.05,false);                                                                                                  // planes passing high up
+}
+function planeDrone(dur,vol,dive){
+  if(!actx) return; const t=actx.currentTime, o=actx.createOscillator(), o2=actx.createOscillator(), f=actx.createBiquadFilter(), g=actx.createGain();
+  o.type='sawtooth'; o2.type='sawtooth'; o.frequency.setValueAtTime(92,t); o.frequency.linearRampToValueAtTime(70,t+dur); o2.frequency.setValueAtTime(95,t); o2.frequency.linearRampToValueAtTime(71,t+dur);
+  f.type='lowpass'; f.frequency.value=dive?900:420; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+dur*0.45); g.gain.linearRampToValueAtTime(0,t+dur);
+  o.connect(f); o2.connect(f); f.connect(g); g.connect(master); o.start(t); o2.start(t); o.stop(t+dur+0.1); o2.stop(t+dur+0.1);
+}
+// ---------- planes: dive-bomb + strafe runs ----------
+const planes=[]; let planeT=45;
+function makePlane(soviet){
+  const g=new THREE.Group(), body=mat(soviet?0x55613a:0x6a7060,{roughness:.7}), belly=mat(soviet?0x8aa0b0:0x9aa8b4), dark=mat(0x222222);
+  const p=(geo,m,x,y,z,rx=0,ry=0,rz=0)=>{ const me=new THREE.Mesh(geo,m); me.position.set(x,y,z); me.rotation.set(rx,ry,rz); g.add(me); return me; };
+  p(new THREE.BoxGeometry(1.3,1.3,9),body,0,0,0); p(new THREE.BoxGeometry(1.2,0.3,8),belly,0,-0.65,0);
+  p(new THREE.BoxGeometry(0.9,0.8,2.2),mat(0x8fa4b0,{roughness:.2,metalness:.3}),0,0.75,0.3);                    // canopy
+  if(soviet){ p(new THREE.BoxGeometry(14,0.25,2.2),body,0,-0.2,-0.6); }
+  else { p(new THREE.BoxGeometry(5,0.25,2.2),body,-3.6,-0.55,-0.6,0,0,0.28); p(new THREE.BoxGeometry(5,0.25,2.2),body,3.6,-0.55,-0.6,0,0,-0.28); // gull wings
+         p(new THREE.BoxGeometry(5,0.22,1.8),body,-8.3,0.15,-0.6,0,0,-0.12); p(new THREE.BoxGeometry(5,0.22,1.8),body,8.3,0.15,-0.6,0,0,0.12);
+         for(const sx of [-1,1]) p(new THREE.BoxGeometry(0.5,1.4,1.2),body,sx*2.3,-1.3,-1.6); }                         // fixed landing gear
+  p(new THREE.BoxGeometry(5,0.2,1.4),body,0,0.1,4); p(new THREE.BoxGeometry(0.2,1.8,1.4),body,0,0.9,4.1);                // tail
+  p(new THREE.CylinderGeometry(1.7,1.7,0.05,16),mat(0x333333,{transparent:true,opacity:0.35}),0,0,-4.6,Math.PI/2);    // spinning prop
+  p(new THREE.CylinderGeometry(0.35,0.5,0.6,10),dark,0,0,-4.5,Math.PI/2);
+  if(soviet) for(const sx of [-1,1]){ const st=redStar(0.6); st.rotation.set(-Math.PI/2,0,0); st.position.set(sx*5,0.0,-0.6); g.add(st); }
+  g.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
+  return g;
+}
+function launchPlane(enemy){
+  const P=isTankMap()&&ptank?ptank.pos:player.pos;
+  let T=null;
+  if(enemy){ for(let k=0;k<12 && !T;k++){ const a=Math.random()*6.28, d=6+Math.random()*16, x=P.x+Math.cos(a)*d, z=P.z+Math.sin(a)*d; if(Math.abs(x)<L-4 && Math.abs(z)<L-4 && !insideBuilding(x,z)) T=new V3(x,0,z); } }
+  else { const foes=isTankMap()?tanks.filter(t=>t.team==='enemy'&&!t.dead):enemies.filter(e=>!e.dead); if(foes.length){ const f=foes[(Math.random()*foes.length)|0]; T=f.pos.clone().setY(0); } }
+  if(!T) return;
+  const ang=Math.random()*6.28, dir=new V3(Math.cos(ang),0,Math.sin(ang));
+  const planeSoviet = enemy ? selSide==='german' : selSide==='soviet', strafe=Math.random()<0.7;
+  if(coopHost()) coopSend({t:'plane',T:arr(T),d:arr(dir),e:enemy?1:0,s:planeSoviet?1:0,st:strafe?1:0});
+  spawnPlane(T,dir,enemy,planeSoviet,strafe,false);
+}
+function spawnPlane(T,dir,enemy,planeSoviet,strafe,visual){
+  const mesh=makePlane(planeSoviet); scene.add(mesh);
+  planes.push({mesh,T,dir,t:0,dur:9,enemy,stuka:!planeSoviet,bombed:false,strafe,gunT:0,siren:null,visual});
+  planeDrone(9,enemy?0.22:0.16,true);
+  if(!planeSoviet && enemy){ // the Stuka's "Jericho trumpet" siren
+    const t=actx.currentTime, o=actx.createOscillator(), g=actx.createGain(); o.type='sawtooth'; o.frequency.setValueAtTime(260,t+1.5); o.frequency.exponentialRampToValueAtTime(820,t+4.4);
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.07,t+2); g.gain.linearRampToValueAtTime(0.11,t+4.3); g.gain.linearRampToValueAtTime(0,t+5.2);
+    const f=actx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=700; f.Q.value=1.2; o.connect(f); f.connect(g); g.connect(master); o.start(t); o.stop(t+5.4); }
+  if(enemy){ showMsg('⚠ ENEMY AIRCRAFT! GET TO COVER!',2.5); if(!isTankMap()) squadShout('plane',true); }
+  else showMsg('OUR PLANES ARE ATTACKING THE ENEMY!',2);
+}
+function planeAt(pl,s){ // position along a dive: high, down to ~16 m over the target, then climb away
+  const x=(s-0.5)*420, alt=16+60*Math.pow(Math.abs(s-0.5)*2,1.4);
+  return pl.T.clone().addScaledVector(pl.dir,x).setY(alt);
+}
+function updatePlanes(dt){
+  if(!isDuel() && !coopGuest() && state==='playing' && !battle.done && protectT<=0 && mapDoneT<=0){
+    planeT-=dt; if(planeT<=0){ planeT=55+Math.random()*45; launchPlane(Math.random()<0.65); }
+  }
+  for(let i=planes.length-1;i>=0;i--){ const pl=planes[i]; pl.t+=dt; const s=pl.t/pl.dur;
+    const p=planeAt(pl,s), p2=planeAt(pl,s+0.01);
+    pl.mesh.position.copy(p); pl.mesh.lookAt(p2); pl.mesh.rotateY(Math.PI);   // nose (-Z) points along the flight path
+    // strafing run: bullets walk along the ground toward the target
+    if(pl.strafe && s>0.36 && s<0.5){ pl.gunT-=dt; if(pl.gunT<=0){ pl.gunT=0.07;
+      const hit=pl.T.clone().addScaledVector(pl.dir,(s-0.5)*420*0.9+(Math.random()-.5)*1.5).add(new V3((Math.random()-.5)*1.4,0,(Math.random()-.5)*1.4));
+      spawnPuff(hit.clone().add(new V3(0,0.2,0)),mapSnow?0xffffff:0x8a7a5a,1.0,0.6,false,0.8); addBulletHole(hit,new V3(0,1,0),true);
+      noise(0.05,900,0.12*Math.min(1,20/(hit.distanceTo(camera.position)+5)),'lowpass');
+      if(!pl.visual) planeGunHit(hit,pl.enemy); } }
+    if(!pl.bombed && s>=0.47){ pl.bombed=true; const b=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,1.2,8),mat(0x2a2a28)); b.rotation.x=Math.PI/2; b.position.copy(p); scene.add(b); pl.bomb={m:b,t:0,from:p.clone()}; }
+    if(pl.bomb && !pl.bomb.done){ pl.bomb.t+=dt; const k=Math.min(1,pl.bomb.t/0.9); pl.bomb.m.position.lerpVectors(pl.bomb.from,pl.T,k); pl.bomb.m.position.y=pl.bomb.from.y*(1-k*k);
+      if(k>=1){ pl.bomb.done=true; scene.remove(pl.bomb.m); if(!pl.visual) shellImpact({pos:pl.T.clone(),wall:false}); shellShock(pl.T,18); for(let j=0;j<6;j++) spawnPuff(pl.T.clone().add(new V3((Math.random()-.5)*6,1+Math.random()*3,(Math.random()-.5)*6)),0x2a2724,6,3,false,1); } }
+    if(s>=1){ scene.remove(pl.mesh); planes.splice(i,1); }
+  }
+}
+function planeGunHit(p,enemyPlane){
+  if(isTankMap()){ infSplash(p,{team:enemyPlane?'enemy':'ally'},1.6,60); return; }
+  if(enemyPlane && coopHost() && partner && !partnerTarget.dead && Math.hypot(partner.pos.x-p.x,partner.pos.z-p.z)<1.4) coopSend({t:'hurt',d:35,f:arr(p)});
+  if(enemyPlane){ if(!playerDead && Math.hypot(player.pos.x-p.x,player.pos.z-p.z)<1.4 && !explosionBlocked(p.clone().add(new V3(0,6,0)),player.pos.clone().add(new V3(0,1,0)))) damagePlayer(35,p);
+    if(Math.hypot(player.pos.x-p.x,player.pos.z-p.z)<4) suppressHit(0.2);
+    for(const m of mates) if(!m.dead && Math.hypot(m.pos.x-p.x,m.pos.z-p.z)<1.2) damageSoldier(m,50,null); }
+  else for(const e of enemies) if(!e.dead && Math.hypot(e.pos.x-p.x,e.pos.z-p.z)<1.2) damageSoldier(e,60,null);
+}
+function clearPlanes(){ for(const pl of planes){ scene.remove(pl.mesh); if(pl.bomb) scene.remove(pl.bomb.m); } planes.length=0; planeT=40+Math.random()*30; }
+
+// ---------- screen effects + body sounds, every frame ----------
+function updateImmersion(dt,t){
+  updateCasings(dt);
+  const playing=(state==='playing'||state==='dead') && !isTankMap();
+  const sprinting=gun.sprintT>0.5;
+  updateBreathFog(dt,sprinting);
+  updatePlanes(dt);
+  // shell shock fades over ~4 s
+  shock=Math.max(0,shock-dt*0.24); suppress=Math.max(0,suppress-dt*0.45);
+  if(muffle) muffle.frequency.setTargetAtTime(20000*Math.pow(1-shock,3)+500,actx.currentTime,0.05);
+  if(ringGain && shock<0.05) ringGain.gain.setTargetAtTime(0,actx.currentTime,0.3); else if(ringGain) ringGain.gain.setTargetAtTime(0.045*shock,actx.currentTime,0.3);
+  const blur=shock*4.5;
+  renderer.domElement.style.filter = blur>0.15 ? `blur(${blur.toFixed(1)}px) brightness(${(1+shock*0.25).toFixed(2)})` : '';
+  $('supp').style.opacity=Math.min(0.85,suppress*0.9).toFixed(2);
+  // frost at the screen edges on snowy maps (stronger in a snowstorm)
+  $('frost').style.opacity = state==='menu' ? 0 : mapSnow ? (atmo.wx==='precip'?0.55:atmo.tod==='night'?0.32:0.18) : 0;
+  // heartbeat when badly hurt, heavy breathing when out of breath
+  const lowHP = isTankMap() ? (ptank && !ptank.dead && ptank.hp<40) : (!playerDead && playerHP<45);
+  if(lowHP && (state==='playing')){ heartT-=dt; if(heartT<=0){ const hp=isTankMap()?ptank.hp:playerHP; heartT=0.55+hp/100; play(SB.heart,0.55); } }
+  if(playing && !playerDead && (player.tired || player.stamina<0.35) && state==='playing'){ breathT-=dt; if(breathT<=0){ breathT=1.15; play(SB.breath,player.tired?0.35:0.22,0.9+Math.random()*0.2); } }
+  // distant battle all around you
+  if(state==='playing'||state==='paused') distantWar(dt);
+}
+
+/* ================= CO-OP CAMPAIGN (the host runs the battle; a friend joins over the internet) ================= */
+const COOP_PREFIX='eastern-front-coop-v1-';
+let coop=null;                                   // {peer,conn,host,code,mission,active,...}
+const isCoop=()=>!!(coop && coop.active);
+const coopHost=()=>isCoop() && coop.host;
+const coopGuest=()=>isCoop() && !coop.host;
+let partner=null;                                // host side: the friend's soldier
+const partnerTarget={isPartner:true,pos:new V3(),dead:true,crouchK:0,speed:0};
+const puppets=new Map();                         // guest side: network id -> soldier copy
+let nidSeq=1; const nidOf=s=>s.nid||(s.nid=nidSeq++);
+const WKEYS=Object.keys(WEAPONS);
+function coopSend(m){ try{ if(coop && coop.conn && coop.conn.open) coop.conn.send(m); }catch(e){} }
+const setCoopStatus=t=>{ $('coopStatus').innerHTML=t; };
+function closeCoop(sendBye=true){
+  if(!coop) return;
+  if(sendBye) coopSend({t:'bye'});
+  try{ coop.conn && coop.conn.close(); }catch(e){} try{ coop.peer && coop.peer.destroy(); }catch(e){}
+  coop=null; removePartner(); clearPuppets();
+}
+function removePartner(){ if(partner){ scene.remove(partner.root); partner=null; } partnerTarget.dead=true; }
+function clearPuppets(){ for(const p of puppets.values()) scene.remove(p.root); puppets.clear(); }
+
+// ---------- lobby ----------
+async function coopHostMission(id){
+  initAudio(); closeCoop(false);
+  hideMenus(); $('coopMenu').style.display='flex'; $('coopJoinRow').style.display='none'; $('coopPick').innerHTML='';
+  $('coopTitle').textContent=`CO-OP · ${MAPS[id].short}`;
+  setCoopStatus('Connecting…');
+  let Peer; try{ Peer=await loadPeer(); }catch(e){ setCoopStatus('Could not load the online part. Check your internet connection and try again.'); return; }
+  const code=duelCode(), peer=new Peer(COOP_PREFIX+code,{debug:0});
+  coop={peer,conn:null,host:true,code,mission:id,active:false};
+  peer.on('open',()=>setCoopStatus(`Your co-op code:<div style="font-size:34px;letter-spacing:8px;margin:6px 0;color:#ffd23a">${code}</div>Your friend presses <b>🤝 JOIN A FRIEND'S MISSION</b> on the main menu and types this code.`));
+  peer.on('connection',c=>{ if(coop.conn){ c.close(); return; } setupCoopConn(c); });
+  peer.on('error',e=>setCoopStatus(e.type==='unavailable-id'?'That code was taken. Go back and try again.':'Connection problem ('+e.type+'). Try again.'));
+}
+function showCoopJoin(){
+  hideMenus(); state='menu'; $('coopMenu').style.display='flex'; $('coopJoinRow').style.display='flex'; $('coopPick').innerHTML='';
+  $('coopTitle').textContent='JOIN A FRIEND\'S MISSION'; setCoopStatus('Type the code your friend got when they pressed 🤝 PLAY WITH A FRIEND in a mission briefing.');
+}
+async function coopJoin(){
+  initAudio();
+  const code=$('coopCode').value.trim().toUpperCase();
+  if(code.length<5){ setCoopStatus('The code has 5 letters.'); return; }
+  closeCoop(false); setCoopStatus('Connecting…');
+  let Peer; try{ Peer=await loadPeer(); }catch(e){ setCoopStatus('Could not load the online part. Check your internet connection and try again.'); return; }
+  const peer=new Peer({debug:0});
+  coop={peer,conn:null,host:false,code,active:false};
+  peer.on('open',()=>{ setCoopStatus('Looking for your friend\'s mission…'); setupCoopConn(peer.connect(COOP_PREFIX+code,{reliable:true})); });
+  peer.on('error',e=>setCoopStatus(e.type==='peer-unavailable'?'No mission with that code. Check the code and that your friend is still waiting.':'Connection problem ('+e.type+'). Try again.'));
+}
+function setupCoopConn(c){
+  coop.conn=c;
+  c.on('open',()=>{ if(coop.host){ setCoopStatus('Your friend connected! They are choosing a weapon…'); coopSend({t:'hello',mission:coop.mission,side:selSide}); } else setCoopStatus('Connected!'); });
+  c.on('data',onCoopData);
+  c.on('close',()=>coopLost('Your friend left the game.'));
+  c.on('error',()=>coopLost('The connection was lost.'));
+}
+function coopLost(msg){
+  if(!coop) return; const wasHost=coop.host, playing=coop.active && state!=='menu';
+  closeCoop(false);
+  if(playing && wasHost){ showMsg(msg+' You carry on alone.',4); }
+  else if(playing){ showMsg(msg,4); setTimeout(()=>$('toMenu').onclick(),2500); }
+  else setCoopStatus(msg);
+}
+function guestPickWeapon(m){
+  coop.mission=m.mission; coop.side=m.side; selSide=m.side;
+  $('coopTitle').textContent=`CO-OP · ${MAPS[m.mission].short} · ${SIDES[m.side].title}`;
+  const st=STORY[m.side][m.mission];
+  const list=[...SIDES[m.side].weapons,...UNLOCKS[m.side].map(u=>u[0])].filter(w=>weaponUnlocked(m.side,w));
+  if(!list.includes(selWeapon)) selWeapon=list[0];
+  const draw=()=>{ $('coopPick').innerHTML=`<div class="paper" style="font-size:13px"><b>${st.title.toUpperCase()}</b> · ${st.date}<br>${st.obj}</div>
+      <div class="pickRow">${list.map(w=>`<button class="sq${w===selWeapon?' sel':''}" data-w="${w}">${WEAPONS[w].name}</button>`).join('')}</div>
+      <div class="rowBtns"><button id="coopReady" class="big">READY ▶</button></div>`;
+    $('coopPick').querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{ selWeapon=b.dataset.w; draw(); });
+    $('coopReady').onclick=()=>{ coopSend({t:'ready',weapon:selWeapon}); setCoopStatus('Ready! Waiting for your friend to start…'); $('coopReady').disabled=true; }; };
+  $('coopJoinRow').style.display='none'; setCoopStatus('Pick your weapon, then press READY.'); draw();
+}
+
+// ---------- messages ----------
+function onCoopData(m){
+  if(!coop || !m) return;
+  switch(m.t){
+    // host receives
+    case 'ready': coop.guestWeapon=WEAPONS[m.weapon]?m.weapon:SIDES[selSide].weapons[0]; coop.active=true; startMission(coop.mission); break;
+    case 'gs': if(partner){ coop.pt=v3(m.p); coop.py=m.y; partnerTarget.crouchK=m.c?1:0; partner.wantCrouch=!!m.c; partner.aimPitch=m.pi||0; } break;
+    case 'hit': { const s=[...enemies,...mates].find(x=>x.nid===m.nid); if(s && !s.dead){
+        if(s.team==='enemy'){ const killed=damageSoldier(s,m.d,partnerTarget); if(killed) coopSend({t:'killed',nid:m.nid,h:m.h}); }
+        else { s.flinch=1; } } break; }
+    case 'gfire': if(partner && !partner.dead){ const mz=new V3(); partner.weaponObj.userData.muzzle.getWorldPosition(mz); const e=v3(m.e);
+        const g=new THREE.BufferGeometry().setFromPoints([mz,e]); const ln=new THREE.Line(g,tracerMat); scene.add(ln); tracers.push({ln,t:0.05});
+        partner.flashT=0.05; partner.muzzleFlash.visible=true; sndShot(m.w,Math.min(1,6/(mz.distanceTo(camera.position)+2))); alertByGunshot(partner.pos); } break;
+    case 'gnade': { const g=makeGrenadeMesh(selSide); g.position.copy(v3(m.p)); scene.add(g); grenades.push({m:g,pos:g.position,vel:v3(m.v),fuse:m.f,spin:new V3(6,3,6),owner:'partner'}); break; }
+    case 'down': if(partner){ partner.dead=true; partner.deadT=0; partner.fallDir=1; } partnerTarget.dead=true; showMsg('YOUR FRIEND IS DOWN!',2);
+      if(playerDead) coopBothDown(); break;
+    case 'up': if(partner){ partner.dead=false; partner.body.rotation.set(0,0,0); partner.body.position.y=0; partner.pos.copy(v3(m.p)); coop.pt=v3(m.p); } partnerTarget.dead=false; break;
+    // guest receives
+    case 'hello': guestPickWeapon(m); break;
+    case 'start': startCoopGuest(m); break;
+    case 'snap': guestApplySnap(m); break;
+    case 'hurt': if(!playerDead && protectT<=0 && state!=='menu'){ if(m.h) lastHeadshot=true; damagePlayer(m.d,v3(m.f)); } break;
+    case 'killed': kills++; mstats.kills++; if(m.h) mstats.heads++; hitTimer=0.15; $('hit').classList.toggle('kill',true); showMsg(m.h?'HEADSHOT! ENEMY DOWN':'ENEMY DOWN',1.2); tone(900,1200,0.08,0.15,'square'); break;
+    case 'nade': { const g=makeGrenadeMesh(m.side||selSide); g.position.copy(v3(m.p)); scene.add(g); grenades.push({m:g,pos:g.position,vel:v3(m.v),fuse:m.f,spin:new V3(6,3,6),owner:'fx'}); break; }
+    case 'shell': { const t={pos:v3(m.p),wall:!!m.w,n:m.n?v3(m.n):null};
+      const ring=new THREE.Mesh(ringGeo,new THREE.MeshBasicMaterial({color:0xff3a20,transparent:true,opacity:0.5,depthWrite:false,fog:false}));
+      ring.position.set(t.wall?t.pos.x+t.n.x*2:t.pos.x,0.08,t.wall?t.pos.z+t.n.z*2:t.pos.z); ring.visible=!t.wall; scene.add(ring);
+      coop.rings=(coop.rings||[]); coop.rings.push({ring,t:1.7});
+      const d=Math.hypot(t.pos.x-player.pos.x,t.pos.z-player.pos.z), v=Math.min(1,22/(d+6)); tone(1500,380,1.7,0.16*v+0.03,'sine');
+      if(d<15 && state==='playing') showMsg('⚠ SHELL INCOMING! RUN! GET AWAY FROM THE RED CIRCLE!',1.7); break; }
+    case 'simp': shellImpact({pos:v3(m.p),wall:!!m.w,n:m.n?v3(m.n):null},true); shellShock(v3(m.p),16); break;
+    case 'plane': spawnPlane(v3(m.T),v3(m.d),!!m.e,!!m.s,!!m.st,true);
+      if(m.e){ showMsg('⚠ ENEMY AIRCRAFT! GET TO COVER!',2.5); planeDrone(9,0.22,true); } else { showMsg('OUR PLANES ARE ATTACKING THE ENEMY!',2); planeDrone(9,0.16,true); } break;
+    case 'fail': coopGuestFail(); break;
+    case 'complete': if(!battle.done){ battle.done=true; coopGuestComplete(); } break;
+    case 'bye': coopLost('Your friend left the game.'); break;
+  }
+}
+
+// ---------- host: start + keep the friend in sync ----------
+function coopAfterStart(){ // called at the end of startGame() on the host
+  if(!partner || partner.side!==selSide || partner.weapon!==coop.guestWeapon){
+    removePartner(); partner=makeSoldier(selSide,coop.guestWeapon,'FRIEND'); initAI(partner,'ally','follow'); partner.remote=true; scene.add(partner.root);
+  }
+  const sp=coopSpawnNear(player.pos,2.5); partner.dead=false; partner.body.rotation.set(0,0,0); partner.body.position.y=0; partner.pos.copy(sp);
+  partnerTarget.pos=partner.pos; partnerTarget.dead=false; coop.pt=sp.clone(); coop.py=spawnYaw; coop.snapT=0; coop.shots=[];
+  coopSend({t:'start',mission:currentMap,side:selSide,map:currentMap,phase:moscowPhase,tod:atmo.tod,wx:atmo.wx,total:battle.total,p:arr(sp),yaw:spawnYaw,killed:battle.killed});
+}
+function coopSpawnNear(c,r){
+  for(let k=0;k<16;k++){ const a=Math.random()*6.28, d=r+Math.random()*1.5, p=new V3(c.x+Math.cos(a)*d,0,c.z+Math.sin(a)*d); if(!blocked(p,0.35,1.7)) return p; }
+  return c.clone();
+}
+function coopBlastPartner(centre,R,dmgAt){
+  if(!coopHost() || !partner || partnerTarget.dead) return;
+  const chest=partner.pos.clone().add(new V3(0,1.0,0)), d=centre.distanceTo(chest);
+  if(d<R && !explosionBlocked(centre,chest)) coopSend({t:'hurt',d:Math.round(dmgAt(d)),f:arr(centre)});
+}
+function coopShot(from,end,heavy,team){ if(coopHost() && coop.shots && coop.shots.length<40) coop.shots.push([...arr(from),...arr(end),heavy?1:0,team==='enemy'?1:0]); }
+function updateCoopHost(dt,t){
+  if(!coopHost()) return;
+  // the friend's soldier in your world
+  if(partner){
+    if(partner.dead) animateDead(partner,dt);
+    else { const ox=partner.pos.x, oz=partner.pos.z; partner.pos.lerp(coop.pt,Math.min(1,dt*12)); partner.pos.y=Math.max(0,coop.pt.y);
+      partner.speed=Math.hypot(partner.pos.x-ox,partner.pos.z-oz)/Math.max(dt,1e-4); partnerTarget.speed=partner.speed;
+      partner.heading=angLerp(partner.heading,coop.py||0,Math.min(1,dt*14)); partner.root.rotation.y=partner.heading; animateSoldier(partner,dt,t); }
+    if(partner.flashT>0){ partner.flashT-=dt; if(partner.flashT<=0) partner.muzzleFlash.visible=false; }
+  }
+  coop.snapT-=dt; if(coop.snapT>0) return; coop.snapT=0.1;
+  const e=[];
+  for(const s of mates) e.push([nidOf(s),0,+s.pos.x.toFixed(2),+s.pos.z.toFixed(2),+s.heading.toFixed(2),(s.dead?1:0)|((s.crouchK||0)>0.5?2:0),WKEYS.indexOf(s.weapon)]);
+  for(const s of enemies) e.push([nidOf(s),1,+s.pos.x.toFixed(2),+s.pos.z.toFixed(2),+s.heading.toFixed(2),(s.dead?1:0)|((s.crouchK||0)>0.5?2:0),WKEYS.indexOf(s.weapon)]);
+  const hud={w:$('waveInfo').textContent,ob:$('objBox').style.display,o:$('objTxt').textContent,of:$('objFill').style.width,oc:$('objFill').style.background,
+    fp:(isBerlin()&&obj)?obj.prog:0,zv:(isBerlin()&&berlinObj?berlinObj.zone.visible:currentMap==='moscow'&&moscowObj?moscowObj.zone.visible:false)?1:0};
+  coopSend({t:'snap',e,me:[...arr(player.pos),+player.yaw.toFixed(3),+player.pitch.toFixed(3),player.crouch?1:0,playerDead?1:0,WKEYS.indexOf(gun.type)],sh:coop.shots,hud,k:battle.killed});
+  coop.shots=[];
+}
+// host died: come back beside the friend, unless they're down too
+function coopHostDown(){
+  playerDead=true; state='dead'; mouseDown=rmb=false; mstats.deaths++;
+  coopSend({t:'hostdown'});
+  if(partnerTarget.dead){ coopBothDown(); return; }
+  showMsg('YOU\'RE DOWN! BACK IN 8 SECONDS NEXT TO YOUR FRIEND…',3); coop.respT=8;
+}
+function coopBothDown(){
+  if(coop.failed) return; coop.failed=true;
+  coopSend({t:'fail'}); coop.respT=0;
+  playerDead=false; realPlayerDies();          // the normal "knocked out → checkpoint" screen for the host
+}
+function coopHostTick(dt){
+  if(!coopHost() || !playerDead || coop.failed || !coop.respT) return;
+  coop.respT-=dt;
+  if(coop.respT<=0){
+    if(partnerTarget.dead){ coopBothDown(); return; }
+    coop.respT=0; const sp=coopSpawnNear(partner.pos,2);
+    Object.assign(player,{pos:sp,vel:new V3(),pitch:0,crouch:false,crouchToggle:false,stamina:1});
+    playerHP=100; playerDead=false; hurtT=0; lastHurt=99; state='playing'; protectT=2;
+    const W=WEAPONS[gun.type]; gun.ammo=W.mag; gun.reloading=0; showMsg('BACK IN THE FIGHT!',1.5);
+  }
+}
+
+// ---------- guest: mirror the host's battle ----------
+function startCoopGuest(m){
+  hideMenus(); $('dead').style.display='none'; $('respawnBtn').style.display='';
+  coop.active=true; coop.failed=false; coop.mission=m.mission;
+  selSide=m.side; moscowPhase=m.phase||1;
+  if(currentMap!==m.map){ leaveTankMode(); clearSoldiers(); buildMap(m.map); visCols=null; }
+  clearSoldiers(); leaveTankMode(); resetProps(); resetArtillery(); clearPlanes(); clearPuppets(); shock=0; suppress=0;
+  for(const g of grenades) scene.remove(g.m); grenades.length=0;
+  setSpawn();
+  const W=WEAPONS[selWeapon];
+  Object.assign(gun,{type:selWeapon,ammo:W.mag,reserve:W.reserve,cooldown:0,reloading:0,bolt:0,ads:0,kick:0,flash:0,sprintT:0});
+  buildViewmodel(selSide,selWeapon); buildCrosshair();
+  Object.assign(player,{pos:v3(m.p),vel:new V3(),yaw:m.yaw||0,pitch:0,onGround:true,crouch:false,crouchToggle:false,eye:1.62,stamina:1,landDip:0,recoilAcc:0});
+  applyAtmosphere(m.tod,m.wx); atmoLabel=`${TODS[m.tod].name} · ${m.wx==='clear'?'CLEAR SKIES':m.wx==='fog'?'THICK FOG':MAPS[m.map].snow?'SNOWSTORM':'RAIN'}`;
+  playerHP=100; hurtT=0; lastHurt=99; playerDead=false; grenadesLeft=3; holes.count=0; holeIdx=0; mapDoneT=0; $('mapdone').style.opacity=0;
+  if(!m.killed) { kills=0; }
+  battle={total:m.total,spawned:0,killed:m.killed||0,spawnT:0,done:false};
+  resetObjective();
+  startProtection(); musicStart(); MUS.int=0; MUS.target=0;
+  $('hud').style.display='block';
+  $('side').textContent=`CO-OP · ${SIDES[selSide].title} · ${W.name} · ${MAPS[m.map].short} · ${atmoLabel}`; $('side').style.color=SIDES[selSide].color;
+  coop.sendT=0; coop.hostAv=null; coop.respT=0;
+  state='paused'; $('pause').style.display='flex';
+  setTimeout(()=>showMsg(battleTitle(),3.5),300);
+}
+function puppetFor(nid,team,wi){
+  let p=puppets.get(nid);
+  if(!p){ const side=team===0?selSide:(selSide==='soviet'?'german':'soviet'); const w=WKEYS[wi]||SIDES[side].weapons[0];
+    p=makeSoldier(side,w,null); initAI(p,team===0?'ally':'enemy','idle'); p.puppet=true; p.nid=nid; p.target=p.pos.clone(); p.th=0; scene.add(p.root); puppets.set(nid,p); }
+  return p;
+}
+function guestApplySnap(m){
+  if(!coopGuest()) return;
+  const seen=new Set();
+  for(const [nid,team,x,z,h,f,wi] of m.e){ seen.add(nid);
+    const p=puppetFor(nid,team,wi); const fresh=!p.seenOnce; p.seenOnce=true;
+    p.target.set(x,0,z); p.th=h; if(fresh){ p.pos.set(x,0,z); p.heading=h; }
+    const dead=!!(f&1); if(dead && !p.dead){ p.dead=true; p.deadT=0; p.fallDir=Math.random()<.5?1:-1; } else if(!dead && p.dead){ p.dead=false; p.body.rotation.set(0,0,0); p.body.position.y=0; }
+    p.wantCrouch=!!(f&2); }
+  for(const [nid,p] of puppets) if(!seen.has(nid) && nid!==0){ scene.remove(p.root); puppets.delete(nid); }
+  // the host as a soldier in your world
+  const me=m.me; let hav=puppets.get(0);
+  if(!hav){ hav=makeSoldier(selSide,WKEYS[me[8]]||SIDES[selSide].weapons[0],'FRIEND'); initAI(hav,'ally','idle'); hav.puppet=true; hav.nid=0; hav.target=new V3(); scene.add(hav.root); puppets.set(0,hav); hav.pos.set(me[0],me[1],me[2]); }
+  hav.target.set(me[0],me[1],me[2]); hav.th=me[3]; hav.aimPitch=me[4]; hav.wantCrouch=!!me[5]; hav.isHost=true;
+  if(me[6] && !hav.dead){ hav.dead=true; hav.deadT=0; hav.fallDir=1; } else if(!me[6] && hav.dead){ hav.dead=false; hav.body.rotation.set(0,0,0); hav.body.position.y=0; }
+  // shots: tracers + sound + near-miss suppression
+  for(const s of (m.sh||[])){ const a=new V3(s[0],s[1],s[2]), b=new V3(s[3],s[4],s[5]);
+    const g=new THREE.BufferGeometry().setFromPoints([a,b]); const ln=new THREE.Line(g,tracerMat); scene.add(ln); tracers.push({ln,t:0.05});
+    sndShot(!!s[6],Math.min(1,6/(a.distanceTo(camera.position)+2))*0.85);
+    if(s[7] && nearMiss(a,b.clone().sub(a).normalize(),a.distanceTo(b)+2)) sndWhizz(); }
+  // HUD and objective
+  const H=m.hud||{}; $('waveInfo').textContent='CO-OP · '+(H.w||''); $('objBox').style.display=H.ob||'none'; $('objTxt').textContent=H.o||''; $('objFill').style.width=H.of||'0%'; if(H.oc) $('objFill').style.background=H.oc;
+  if(isBerlin() && berlinObj){ berlinObj.zone.visible=!!H.zv; if(berlinAttack()){ berlinObj.flag.visible=H.fp>0.02; berlinObj.flag.position.y=17.9+H.fp*3.4; } }
+  if(currentMap==='moscow' && moscowObj) moscowObj.zone.visible=!!H.zv;
+  battle.killed=m.k||0;
+}
+function updateCoopGuest(dt,t){
+  if(!coopGuest()) return;
+  if(protectT>0 && state==='playing') protectT=Math.max(0,protectT-dt);
+  const pe=$('protect'); pe.style.opacity=protectT>0?1:0; if(protectT>0) pe.textContent=`🛡 PROTECTION · ${Math.ceil(protectT)}`;
+  updateGrenades(dt);
+  for(let i=tracers.length-1;i>=0;i--){ tracers[i].t-=dt; if(tracers[i].t<=0){ scene.remove(tracers[i].ln); tracers[i].ln.geometry.dispose(); tracers.splice(i,1); } }
+  if(coop.rings) for(let i=coop.rings.length-1;i>=0;i--){ const r=coop.rings[i]; r.t-=dt; r.ring.material.opacity=0.25+0.35*Math.abs(Math.sin(t*9)); if(r.t<=0){ scene.remove(r.ring); coop.rings.splice(i,1); } }
+  for(const p of puppets.values()){
+    if(p.dead){ animateDead(p,dt); continue; }
+    const ox=p.pos.x, oz=p.pos.z; p.pos.lerp(p.target,Math.min(1,dt*10)); if(!p.isHost) p.pos.y=0;
+    p.speed=Math.hypot(p.pos.x-ox,p.pos.z-oz)/Math.max(dt,1e-4);
+    p.heading=angLerp(p.heading,p.th,Math.min(1,dt*12)); p.root.rotation.y=p.heading; animateSoldier(p,dt,t);
+  }
+  lastHurt+=dt; if(!playerDead && lastHurt>4 && playerHP<100) playerHP=Math.min(100,playerHP+25*dt);
+  hurtT=Math.max(0,hurtT-dt*0.6);
+  $('vig').style.opacity=Math.min(1,hurtT*0.8+(1-playerHP/100)*0.55);
+  $('hpbar').style.width=playerHP+'%'; $('hpbar').style.background=playerHP>50?'#cfd8b8':playerHP>25?'#e0b050':'#d0603c';
+  const dd=$('dmgdir'); if(+dd.dataset.t>0){ dd.dataset.t=+dd.dataset.t-dt; dd.style.opacity=Math.max(0,+dd.dataset.t); }
+  coop.sendT-=dt;
+  if(coop.sendT<=0){ coop.sendT=0.05; coopSend({t:'gs',p:arr(player.pos),y:+player.yaw.toFixed(3),pi:+player.pitch.toFixed(3),c:player.crouch?1:0}); }
+  // down: come back beside the host
+  if(playerDead && coop.respT>0 && !coop.failed){ coop.respT-=dt;
+    if(coop.respT<=0){ const hav=puppets.get(0);
+      if(hav && !hav.dead){ const sp=coopSpawnNear(hav.pos,2); Object.assign(player,{pos:sp,vel:new V3(),pitch:0,crouch:false,crouchToggle:false,stamina:1});
+        playerHP=100; playerDead=false; hurtT=0; state='playing'; protectT=2; const W=WEAPONS[gun.type]; gun.ammo=W.mag; gun.reloading=0;
+        coopSend({t:'up',p:arr(sp)}); showMsg('BACK IN THE FIGHT!',1.5); }
+      else { coop.respT=0.5; showMsg('WAITING FOR YOUR FRIEND TO GET BACK UP…',1); } } }
+  if(mapDoneT>0){ mapDoneT-=dt; if(mapDoneT<=0) showDebrief(); }
+  musicSetIntensity(0.5); musicUpdate(dt);
+}
+function coopGuestDown(){
+  playerDead=true; state='dead'; mouseDown=rmb=false; mstats.deaths++;
+  coopSend({t:'down'}); coop.respT=8;
+  showMsg('YOU\'RE DOWN! BACK IN 8 SECONDS NEXT TO YOUR FRIEND…',3);
+}
+function coopGuestFail(){
+  coop.failed=true; playerDead=true; state='dead'; mouseDown=rmb=false;
+  sting('death'); $('dead').style.display='flex';
+  $('deadInfo').innerHTML='Both of you were knocked out.<br>Waiting for your friend to restart from the checkpoint…';
+  $('respawnBtn').style.display='none';
+  document.body.style.cursor='default'; if(document.pointerLockElement) document.exitPointerLock();
+}
+function coopGuestComplete(){
+  scoreMission(selSide,coop.mission); markComplete(selSide,coop.mission);
+  playerHP=100; showMapDone(); sting('victory'); mapDoneT=6;
+}
+
 /* ================= SAVE GAME (stored in this browser) ================= */
 const SAVE_KEY='easternFront_save_v1';
 function readSave(){ try{ const t=localStorage.getItem(SAVE_KEY); if(!t) return null; const d=JSON.parse(t); if(d && !MAPS[d.map]) d.map='stalingrad'; return (d && SIDES[d.side] && WEAPONS[d.weapon]) ? d : null; }catch(e){ return null; } }
 function writeSave(silent){
-  if(isDuel()) return true;
+  if(isDuel() || coopGuest()) return true;
   try{
     localStorage.setItem(SAVE_KEY,JSON.stringify({map:currentMap,mapName:MAPS[currentMap].name,reserve:gun.reserve,side:selSide,weapon:gun.type,
       killed:battle.killed,kills,checkpoint,phase:moscowPhase,savedAt:Date.now()}));
@@ -4465,6 +5009,7 @@ function showMapDone(next){
   el.style.opacity=1;
 }
 function mapComplete(){
+  if(coopHost()) coopSend({t:'complete'});
   scoreMission(selSide,currentMap);
   markComplete(selSide,currentMap);
   clearSave(); checkpoint=null;
@@ -4499,7 +5044,7 @@ function goToMap(id){
 let atmoLabel='';
 function startGame(){
   if(currentMap!=='moscow') moscowPhase=1;
-  resetProps();
+  resetProps(); clearPlanes(); shock=0; suppress=0;
   setSpawn(); resetArtillery(); mhold={t:MOSCOW_HOLD,prog:0};
   atmoLabel=rollAtmosphere();
   startProtection();
@@ -4513,6 +5058,7 @@ function startGame(){
   resetBattle(); if(isTankMap()) setupTankBattle(); sting('waveStart');
   setTimeout(()=>{ if(state==='playing'||state==='paused') showMsg(battleTitle(),3.5); },300);
   setTimeout(()=>{ if(state==='playing') showMsg(atmoLabel,2.5); },4200);
+  setTimeout(()=>{ if(state==='playing' && !isTankMap()) squadShout('forward',true); },5600);
   for(const g of grenades) scene.remove(g.m); grenades.length=0;
   holes.count=0; holeIdx=0; mapDoneT=0; $('mapdone').style.opacity=0; resetObjective();
   playerHP=100; hurtT=0; lastHurt=99; playerDead=false; $('dead').style.display='none';
@@ -4521,6 +5067,7 @@ function startGame(){
   $('side').style.color=SIDES[selSide].color;
   state='paused'; $('pause').style.display='flex'; showAudioInfo();
   buildCrosshair();
+  if(coopHost()){ coop.failed=false; coop.respT=0; coopAfterStart(); }
 }
 // Mouse lock. If the browser/preview blocks it, fall back to "cursor mode".
 let lockPending=false, cursorMode=false, mouseX=innerWidth/2;
@@ -4568,6 +5115,11 @@ addEventListener('keydown',e=>{ if(e.code==='Escape' && state==='playing' && cur
 addEventListener('mousemove',e=>{ mouseX=e.clientX; });
 $('deploy').onclick=()=>startMission(briefMission);
 $('duelBtn').onclick=()=>showDuelMenu();
+$('coopBtn').onclick=()=>coopHostMission(briefMission);
+$('coopJoinBtn').onclick=()=>showCoopJoin();
+$('coopJoinGo').onclick=()=>coopJoin();
+$('coopCode').addEventListener('keydown',e=>{ e.stopPropagation(); if(e.key==='Enter') coopJoin(); });
+$('coopBack').onclick=()=>{ const h=coop&&coop.host, m=coop&&coop.mission; closeCoop(); if(h && m) showBriefing(m); else $('toMenu').onclick(); };
 $('duelHostBtn').onclick=()=>duelHost();
 $('duelJoinBtn').onclick=()=>duelJoin();
 $('duelCode').addEventListener('keydown',e=>{ e.stopPropagation(); if(e.key==='Enter') duelJoin(); });
@@ -4585,6 +5137,8 @@ $('musicBtn').onclick=()=>{ initAudio(); toggleMusic(); };
 $('testSnd').onclick=()=>{ initAudio(); const b=$('testSnd'); play(SB.rifle,0.9); b.textContent='💥 BANG!'; b.style.background='#8a3a2a';
   setTimeout(()=>{ b.textContent='🔊 TEST SOUND'; b.style.background=''; showAudioInfo(); },350); };
 $('musicBtn').textContent='MUSIC: '+(MUS.on?'ON':'OFF');
+$('voicesBtn').textContent='VOICES: '+(voicesOn?'ON':'OFF');
+$('voicesBtn').onclick=()=>{ voicesOn=!voicesOn; try{ localStorage.setItem('ef_voices',voicesOn?'on':'off'); }catch(e){} $('voicesBtn').textContent='VOICES: '+(voicesOn?'ON':'OFF'); if(!voicesOn && synthOK) speechSynthesis.cancel(); };
 $('resume').onclick=()=>{ initAudio(); lockPointer(); };
 $('respawnBtn').onclick=()=>{
   initAudio();
@@ -4595,13 +5149,15 @@ $('respawnBtn').onclick=()=>{
 $('deadMenu').onclick=()=>{ playerDead=false; $('dead').style.display='none'; $('toMenu').onclick(); };
 $('toMenu').onclick=()=>{
   if(duel && isDuel()) closeDuel();
+  if(coop) closeCoop();
+  $('respawnBtn').style.display='';
   leaveTankMode();
   refreshContinue();
   state='menu'; musicStop(1);
   document.querySelectorAll('.card').forEach(c=>c.classList.toggle('sel',c.dataset.side===selSide));
   renderWeaponButtons();
   state='menu'; $('pause').style.display='none'; document.body.style.cursor='default'; $('hud').style.display='none';
-  hideMenus(); $('menu').style.display='flex'; resetArtillery(); moscowPhase=1; resetAtmosphere();
+  hideMenus(); $('menu').style.display='flex'; resetArtillery(); clearPlanes(); shock=0; suppress=0; moscowPhase=1; resetAtmosphere();
   setSpawn(); spawnWorld(selSide,selWeapon,true);
 };
 
@@ -4732,6 +5288,8 @@ function updatePlayer(dt){
 
   camera.position.set(P.pos.x+Math.cos(P.yaw)*bobX, P.pos.y+P.eye+bobY-P.landDip+(P.stepOff||0), P.pos.z-Math.sin(P.yaw)*bobX);
   camera.rotation.set(P.pitch,P.yaw,0);
+  if(suppress>0.04){ camera.rotation.x+=(Math.random()-.5)*0.012*suppress; camera.rotation.y+=(Math.random()-.5)*0.012*suppress; }
+  if(shock>0.05) camera.rotation.z=Math.sin(performance.now()*0.0013)*0.05*shock;
   if(shakeT>0){ shakeT=Math.max(0,shakeT-dt*2.2); const k=shakeT*shakeT;
     camera.position.x+=(Math.random()-.5)*k*0.3; camera.position.y+=(Math.random()-.5)*k*0.3; camera.rotation.z=(Math.random()-.5)*k*0.06; }
 
@@ -4796,12 +5354,15 @@ function loop(now){
   requestAnimationFrame(loop);
   const dt=Math.min(0.05,(now-last)/1000); last=now; T+=dt;
 
-  if(state==='dead'){ if(isDuel()) updateDuel(dt,T); else if(isTankMap()) updateTankBattle(dt,T); else updateCombat(dt,T); }
+  if(state==='dead'){ if(isDuel()) updateDuel(dt,T); else if(coopGuest()) updateCoopGuest(dt,T); else if(isTankMap()) updateTankBattle(dt,T); else updateCombat(dt,T); }
   if(state==='paused' && isDuel()) updateDuel(dt,T);
+  if(state==='paused' && coopGuest()) updateCoopGuest(dt,T);
+  if(state==='paused' && coopHost()) updateCombat(dt,T);          // the battle keeps going for your friend
+  if(coopHost() && state!=='menu'){ updateCoopHost(dt,T); coopHostTick(dt); }
   if(state==='playing' && isTankMap()){ updateTankPlayer(dt); updateTankBattle(dt,T); }
   else if(state==='playing'){
     updatePlayer(dt);
-    if(isDuel()) updateDuel(dt,T); else updateCombat(dt,T);
+    if(isDuel()) updateDuel(dt,T); else if(coopGuest()) updateCoopGuest(dt,T); else updateCombat(dt,T);
   } else if(state==='menu'){
     menuT+=dt*0.12;
     camera.position.set(SPAWN.x+Math.sin(menuT)*7.5, 2.3, SPAWN.z+Math.cos(spawnYaw)*1.8+Math.cos(menuT)*7.5);
@@ -4809,8 +5370,8 @@ function loop(now){
     camera.lookAt(SPAWN.x,1.1,SPAWN.z+Math.cos(spawnYaw)*1.8);
     updateSoldiers(dt,T,SPAWN,spawnYaw);
   }
-  updatePuffs(dt); updateProps(dt);
-  if((state==='playing'||state==='dead') && !isDuel()) updateArtillery(dt,T);
+  updatePuffs(dt); updateProps(dt); updateImmersion(dt,T);
+  if((state==='playing'||state==='dead'||(state==='paused'&&coopHost())) && !isDuel()) updateArtillery(dt,T);
   updateFlares(dt);
   if(currentMap==='seelow') updateSearchBeams(T);
   updateTouchUI();
