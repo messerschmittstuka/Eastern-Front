@@ -167,6 +167,15 @@
   .newMed{margin-top:10px} .medal{display:flex;gap:10px;align-items:center;margin:4px 0;font-size:13px} .medal small{opacity:.8}
   .case{margin-top:10px} .cm{display:inline-block;margin-right:3px} .cm.no{opacity:.18;filter:grayscale(1)}
   @media (max-height:560px){ .recXP{font-size:11px} .medal{font-size:11px} }
+  #duelMenu,#duelOver{background:radial-gradient(ellipse at center,rgba(30,28,24,.6),rgba(5,5,5,.93))}
+  .pickRow{margin:8px 0 0;text-align:center} .pickRow button{margin:3px}
+  .pickRow button,#squadPick button{padding:6px 12px;background:rgba(18,18,16,.85);color:#e8e2d0;border:2px solid #555;font:13px 'Courier New',monospace;cursor:pointer}
+  .pickRow button.sel{border-color:#e2d8bd}
+  #duelCode{font:bold 24px 'Courier New',monospace;letter-spacing:6px;width:150px;padding:8px;text-align:center;text-transform:uppercase;background:#1b1a17;color:#ffd23a;border:2px solid #777;user-select:text;-webkit-user-select:text;touch-action:auto}
+  #duelStatus{margin:10px 0;min-height:22px;text-align:center;font-size:15px;max-width:92vw}
+  #squadPick{margin:4px 0 6px;font-size:13px;text-align:center}
+  #squadPick button{margin:2px 3px;padding:5px 10px;background:rgba(18,18,16,.85);color:#e8e2d0;border:2px solid #555;font:12px 'Courier New',monospace;cursor:pointer}
+  #squadPick button.sel{border-color:#e2d8bd}
   #err{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:#111;color:#e88;font-size:18px;padding:40px;text-align:center;z-index:99}
 </style>
 </head>
@@ -187,6 +196,7 @@
   </div>
   <div id="menuBtns">
     <button id="continueBtn" class="big" style="display:none"></button>
+    <button id="duelBtn" class="big">⚔ 1v1 WITH A FRIEND</button>
   </div>
   <button id="deleteSave" style="display:none;margin-top:8px;background:none;border:none;color:#a99;cursor:pointer;font:13px 'Courier New'">delete saved game</button>
   <div class="controls">
@@ -211,6 +221,7 @@
     <div id="bObj"></div>
   </div>
   <div id="weapons"></div>
+  <div id="squadPick"></div>
   <div id="bTank"></div>
   <div class="rowBtns"><button id="bBack" class="big">◀ BACK</button><button id="deploy" class="big">DEPLOY ▶</button></div>
 </div>
@@ -224,6 +235,24 @@
     <div id="dRecord"></div>
   </div>
   <div class="rowBtns"><button id="dMissions" class="big">MISSION SELECT</button><button id="dMenu" class="big">MAIN MENU</button></div>
+</div>
+
+<div id="duelMenu" class="overlay" style="display:none">
+  <h1 style="font-size:40px">1v1 WITH A FRIEND</h1>
+  <div class="sub">ONLINE DUEL · FIRST TO 5 KILLS · STALINGRAD COURTYARD</div>
+  <div class="paper" style="font-size:14px"><b>How it works:</b> both of you pick a side and a gun. One of you presses <b>HOST A GAME</b> and sends the 5-letter code (by message, Discord…). The other types the code and presses <b>JOIN</b>. Both of you need to be online. Unlocked guns from your ranks can be used here.</div>
+  <div id="duelSides" class="pickRow"></div>
+  <div id="duelWeapons" class="pickRow"></div>
+  <div class="rowBtns"><button id="duelHostBtn" class="big">HOST A GAME</button></div>
+  <div class="rowBtns" style="align-items:center"><input id="duelCode" maxlength="5" placeholder="CODE" autocomplete="off"><button id="duelJoinBtn" class="big">JOIN</button></div>
+  <div id="duelStatus"></div>
+  <button id="duelBack" class="big">◀ BACK</button>
+</div>
+
+<div id="duelOver" class="overlay" style="display:none">
+  <h1 id="doTitle">DUEL OVER</h1>
+  <div id="doText" class="sub"></div>
+  <div class="rowBtns"><button id="doRematch" class="big">REMATCH</button><button id="doLeave" class="big">LEAVE</button></div>
 </div>
 
 <div id="pause" class="overlay">
@@ -462,36 +491,25 @@ function ruinWall(x0,z0,len,alongX,maxH,gaps=[]){
 const bagGeo = new THREE.BoxGeometry(0.52,0.26,0.4);
 const bagMats = [mat(0x8d8064),mat(0x7d7258),mat(0x9a8e72)];
 function sandbags(cx,cz,len){ // line along X
-  const n = Math.ceil(len/0.5);
+  const n = Math.ceil(len/0.5), bags=[];
   for(let r=0;r<3;r++) for(let i=0;i<n;i++){
     const m = shade(new THREE.Mesh(bagGeo,bagMats[(rnd()*3)|0]));
     m.position.set(cx-len/2+i*0.5+(r%2)*0.25+0.25, r*0.26+0.13, cz+(rnd()-.5)*0.06);
     m.rotation.y=(rnd()-.5)*0.25; m.scale.set(1,1-r*0.05,1);
-    mapRoot.add(m); shootables.push(m);
+    mapRoot.add(m); shootables.push(m); bags.push({m,p0:m.position.clone(),r0:m.rotation.clone(),rest:true});
   }
-  addCollider(new THREE.Box3(new V3(cx-len/2,0,cz-0.25),new V3(cx+len/2+0.25,0.8,cz+0.25)));
+  const c=addCollider(new THREE.Box3(new V3(cx-len/2,0,cz-0.25),new V3(cx+len/2+0.25,0.8,cz+0.25)));
+  const p={name:'bags',kind:'bags',x:cx,z:cz,bags,col:c,fallen:false,t:0}; c.prop=p; props.push(p);
 }
-function hedgehog(x,z){
-  const g=new THREE.Group(); const st=mat(0x3b3a38,{metalness:.6,roughness:.5});
-  const a=box(0.12,0.12,1.7,st); a.rotation.set(0.6,0,0);
-  const b=box(0.12,0.12,1.7,st); b.rotation.set(0,0,0.6); b.rotation.y=Math.PI/2;
-  const c=box(0.12,1.7,0.12,st); c.rotation.set(0.6,0,0.6);
-  g.add(a,b,c); g.position.set(x,0.6,z); g.rotation.y=rnd()*3; mapRoot.add(g);
-  g.children.forEach(m=>shootables.push(m));
-  addCollider(new THREE.Box3(new V3(x-0.55,0,z-0.55),new V3(x+0.55,1.2,z+0.55)));
-}
-function pine(x,z){
-  const s=0.8+rnd()*0.6;
-  const trunk=cyl(0.12*s,0.18*s,2*s,mat(0x4a3526)); trunk.position.set(x,s,z); mapRoot.add(trunk);
-  for(let i=0;i<3;i++){
-    const c=shade(new THREE.Mesh(new THREE.ConeGeometry((1.6-i*0.4)*s,1.8*s,9),mat(0x2c4430)));
-    c.position.set(x,(1.6+i*1.0)*s,z); mapRoot.add(c);
-    const w=shade(new THREE.Mesh(new THREE.ConeGeometry((1.2-i*0.32)*s,0.5*s,9),mat(0xe8edf0)));
-    w.position.set(x,(2.25+i*1.0)*s,z); mapRoot.add(w);
-  }
-  addCollider(new THREE.Box3(new V3(x-0.25,0,z-0.25),new V3(x+0.25,4*s,z+0.25)));
-  shootables.push(trunk);
-}
+const buildHedgehog=()=>[
+  [new THREE.BoxGeometry(0.12,0.12,1.7),0x3b3a38,0,0.6,0,0.6,0,0],
+  [new THREE.BoxGeometry(0.12,0.12,1.7),0x3b3a38,0,0.6,0,0,Math.PI/2,0.6],
+  [new THREE.BoxGeometry(0.12,1.7,0.12),0x3b3a38,0,0.6,0,0.6,0,0.6]];
+function hedgehog(x,z){ addProp('hedgehog',buildHedgehog,x,z,rnd()*3,1,1.1,1.2,'shove'); }
+const buildPine=()=>{ const a=[[new THREE.CylinderGeometry(0.12,0.18,2,7),0x4a3526,0,1,0]];
+  for(let i=0;i<3;i++){ a.push([new THREE.ConeGeometry(1.6-i*0.4,1.8,9),0x2c4430,0,1.6+i*1.0,0]); a.push([new THREE.ConeGeometry(1.2-i*0.32,0.5,9),0xe8edf0,0,2.25+i*1.0,0]); }
+  return a; };
+function pine(x,z){ const s=0.8+rnd()*0.6; addProp('pine',buildPine,x,z,rnd()*6,s,0.5*s,4*s); }
 
 /* ================= STALINGRAD, WINTER 1942 ================= */
 // static geometry is merged per material so the big city stays fast
@@ -537,6 +555,87 @@ const M={
   wire:new THREE.LineBasicMaterial({color:0x2a2a2a}),
   dust:mat(0x8b7d62,{roughness:1}), earthRim:mat(0x6a5a42,{roughness:1})
 };
+
+/* ================= KNOCK-DOWN PROPS (trees, poles, fences, hedgehogs, sandbags) ================= */
+// Each kind of prop is one instanced mesh (one draw call), so hundreds of trees stay fast,
+// and every single one can still be knocked over by a tank.
+let props=[], propKinds={};
+const UPV=new V3(0,1,0);
+const propMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.95});
+function colored(geo,hex){
+  const g=geo.index?geo.toNonIndexed():geo;
+  for(const k of Object.keys(g.attributes)) if(k!=='position' && k!=='normal') g.deleteAttribute(k);
+  const c=new THREE.Color(hex), n=g.attributes.position.count, a=new Float32Array(n*3);
+  for(let i=0;i<n;i++){ a[i*3]=c.r; a[i*3+1]=c.g; a[i*3+2]=c.b; }
+  g.setAttribute('color',new THREE.BufferAttribute(a,3)); return g;
+}
+function propKind(name,build){
+  if(!propKinds[name]){
+    const parts=build().map(([g,hex,x=0,y=0,z=0,rx=0,ry=0,rz=0])=>{ g.applyMatrix4(new THREE.Matrix4().compose(new V3(x,y,z),new THREE.Quaternion().setFromEuler(new THREE.Euler(rx,ry,rz)),ONE)); return colored(g,hex); });
+    propKinds[name]={geo:mergeGeometries(parts,false),list:[],mesh:null};
+  }
+  return propKinds[name];
+}
+// kind: 'fall' (topples over), 'shove' (gets pushed and tumbles)
+function addProp(name,build,x,z,ry,s,colW,colH,kind='fall',colD=colW,noBullet=false){
+  const K=propKind(name,build), p={name,x,z,ry,s,kind,i:K.list.length,fallen:false,t:0,ang:0,dx:0,dz:0,axis:null};
+  K.list.push(p);
+  if(colW){ const c=addCollider(new THREE.Box3(new V3(x-colW/2,0,z-colD/2),new V3(x+colW/2,colH,z+colD/2))); c.prop=p; p.col=c; if(noBullet) c.noBullet=true; }
+  props.push(p); return p;
+}
+function flushProps(){
+  for(const n in propKinds){ const K=propKinds[n]; if(K.mesh || !K.list.length) continue;
+    const m=new THREE.InstancedMesh(K.geo,propMat,K.list.length); m.castShadow=true; m.receiveShadow=true; K.mesh=m; mapRoot.add(m);
+    for(const p of K.list) setPropMatrix(p); }
+}
+const _pm=new THREE.Matrix4(), _pq=new THREE.Quaternion(), _pq2=new THREE.Quaternion(), _pv=new V3(), _ps=new V3();
+function setPropMatrix(p){
+  const K=propKinds[p.name]; if(!K || !K.mesh) return;
+  _pq.setFromAxisAngle(UPV,p.ry);
+  if(p.axis){ _pq2.setFromAxisAngle(p.axis,p.ang); _pq.premultiply(_pq2); }
+  _pm.compose(_pv.set(p.x+p.dx,0,p.z+p.dz),_pq,_ps.set(p.s,p.s,p.s));
+  K.mesh.setMatrixAt(p.i,_pm); K.mesh.instanceMatrix.needsUpdate=true;
+}
+const falling=[];
+function knockProp(p,tk){
+  if(p.fallen) return; p.fallen=true; p.t=0;
+  const dir=new V3(p.x-tk.pos.x,0,p.z-tk.pos.z); if(dir.lengthSq()<0.01) dir.set(0,0,0);
+  dir.normalize().add(fwdOf(tk.heading)).normalize();
+  p.dir=dir; p.axis=new V3().crossVectors(UPV,dir).normalize();
+  falling.push(p);
+  const v=Math.min(1,16/((tk.pos.distanceTo?tk.pos.distanceTo(camera.position):10)+4));
+  if(p.kind==='bags'){ noise(0.4,500,0.35*v,'lowpass',120); for(const b of p.bags){ b.vel=dir.clone().multiplyScalar(2+Math.random()*3).add(new V3((Math.random()-.5)*2,2+Math.random()*2.5,(Math.random()-.5)*2)); b.spin=new V3((Math.random()-.5)*6,(Math.random()-.5)*6,(Math.random()-.5)*6); b.rest=false; } }
+  else if(p.kind==='shove') { noise(0.3,2600,0.3*v,'bandpass'); tone(300,180,0.2,0.15*v,'square'); }
+  else { noise(0.25,2200,0.35*v,'bandpass'); noise(0.9,400,0.25*v,'lowpass',90); }   // crack + crash
+}
+function updateProps(dt){
+  for(let i=falling.length-1;i>=0;i--){
+    const p=falling[i]; p.t+=dt;
+    if(p.kind==='bags'){
+      let moving=false;
+      for(const b of p.bags){ if(b.rest) continue; moving=true;
+        b.vel.y-=9.8*dt; b.m.position.addScaledVector(b.vel,dt); b.m.rotation.x+=b.spin.x*dt; b.m.rotation.y+=b.spin.y*dt; b.m.rotation.z+=b.spin.z*dt;
+        if(b.m.position.y<=0.13){ b.m.position.y=0.13; b.m.rotation.x=0; b.m.rotation.z=0; b.rest=true; } }
+      if(!moving) falling.splice(i,1);
+      continue;
+    }
+    if(p.kind==='shove'){ const k=Math.min(1,p.t/0.6), e=1-(1-k)*(1-k); p.dx=p.dir.x*2.6*e; p.dz=p.dir.z*2.6*e; p.ang=1.4*e; }
+    else { const k=Math.min(1,p.t/1.0); p.ang=(Math.PI/2-0.06)*k*k; }
+    setPropMatrix(p);
+    if(p.t>=(p.kind==='shove'?0.6:1.0)){ falling.splice(i,1);
+      if(p.kind==='fall'){ const top=new V3(p.x,0,p.z).addScaledVector(p.dir,3.5*p.s); spawnPuff(top.add(new V3(0,0.3,0)),mapSnow?0xffffff:0x8a7a5a,2.5,1,false,0.4); } }
+  }
+}
+function resetProps(){
+  falling.length=0;
+  for(const p of props){
+    p.fallen=false; p.t=0; p.ang=0; p.dx=0; p.dz=0; p.axis=null;
+    if(p.kind==='bags') for(const b of p.bags){ b.m.position.copy(b.p0); b.m.rotation.copy(b.r0); b.rest=true; }
+    else setPropMatrix(p);
+    if(p.col && !colliders.includes(p.col)) colliders.push(p.col);
+  }
+  visCols=null;
+}
 
 // ---------- ruined apartment block ----------
 function ruinedBuilding(x0,z0,x1,z1,floors,style,doors={}){
@@ -659,18 +758,11 @@ function crater(x,z,r){
   addGeo(rim,(mapSnow?M.slush:M.earthRim),x,0.05,z);
   for(let i=0;i<6;i++){ const a=rnd()*7; addGeo(new THREE.BoxGeometry(0.3,0.15,0.25),M.brick[0],x+Math.cos(a)*r*1.2,0.07,z+Math.sin(a)*r*1.2,0,rnd()*3,0); }
 }
-function brokenPole(x,z){
-  const tilt=(rnd()-.5)*0.6;
-  addGeo(new THREE.CylinderGeometry(0.1,0.13,6,8),M.wood,x,3,z,tilt*0.3,0,tilt);
-  addGeo(new THREE.BoxGeometry(1.4,0.1,0.1),M.wood,x+Math.sin(-tilt)*5.6,5.6,z,0,0,tilt);
-  addCollider(new THREE.Box3(new V3(x-0.15,0,z-0.15),new V3(x+0.15,3,z+0.15)));
-}
-function deadTree(x,z){
-  const h=3+rnd()*2;
-  addGeo(new THREE.CylinderGeometry(0.08,0.2,h,7),M.char,x,h/2,z,(rnd()-.5)*0.2,0,(rnd()-.5)*0.2);
-  for(let i=0;i<3;i++) addGeo(new THREE.CylinderGeometry(0.03,0.06,1.4,5),M.char,x,h*0.6+i*0.4,z,0.9,rnd()*6,0.6);
-  addCollider(new THREE.Box3(new V3(x-0.2,0,z-0.2),new V3(x+0.2,h,z+0.2)));
-}
+const buildPole=()=>[[new THREE.CylinderGeometry(0.1,0.13,6,8),0x3a2c20,0,3,0,0,0,0.12],[new THREE.BoxGeometry(1.4,0.1,0.1),0x3a2c20,-0.36,5.6,0,0,0,0.12]];
+function brokenPole(x,z){ addProp('pole',buildPole,x,z,rnd()*6,1,0.3,3); }
+const buildDeadTree=()=>{ const a=[[new THREE.CylinderGeometry(0.08,0.2,4,7),0x2a2823,0,2,0]];
+  for(let i=0;i<3;i++) a.push([new THREE.CylinderGeometry(0.03,0.06,1.4,5),0x2a2823,0,2.4+i*0.4,0,0.9,i*2.1,0.6]); return a; };
+function deadTree(x,z){ const h=3+rnd()*2; addProp('deadtree',buildDeadTree,x,z,rnd()*6,h/4,0.4,h); }
 
 // ---------- fires and smoke ----------
 const smokeTex=canvasTex(64,(x,s)=>{ const g=x.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2); g.addColorStop(0,'rgba(255,255,255,1)'); g.addColorStop(0.6,'rgba(255,255,255,.4)'); g.addColorStop(1,'rgba(255,255,255,0)'); x.fillStyle=g; x.fillRect(0,0,s,s); });
@@ -869,9 +961,8 @@ function buildKursk(){
   izba(-26,-4,true,false); izba(-36,-4,true,true); izba(-46,-4,true,false);
   izba(-30,-15,false,true); izba(-52,-14,false,false);
   // fences along the road
-  function fence(x0,x1,z){ for(let x=x0;x<=x1;x+=1.5) sBox(x,0,z,0.1,1.1,0.1,K.plank,false);
-    for(const y of [0.4,0.85]) sBox((x0+x1)/2,y,z,x1-x0,0.08,0.05,K.plank,false);
-    addCollider(new THREE.Box3(new V3(x0,0,z-0.1),new V3(x1,0.9,z+0.1))).noBullet=true; }
+  const buildFence=()=>[[new THREE.BoxGeometry(0.1,1.1,0.1),0x8a6a44,-0.75,0.55,0],[new THREE.BoxGeometry(1.5,0.08,0.05),0x8a6a44,0,0.44,0],[new THREE.BoxGeometry(1.5,0.08,0.05),0x8a6a44,0,0.89,0]];
+  function fence(x0,x1,z){ for(let x=x0;x<x1;x+=1.5) addProp('fence',buildFence,x+0.75,z,0,1,1.5,0.9,'fall',0.2,true); }
   fence(-56,-22,8.6); fence(-56,-22,1.4);
   // well
   addGeo(new THREE.CylinderGeometry(0.8,0.85,0.8,14,1,true),K.logs[0],-58,0.4,5);
@@ -880,11 +971,9 @@ function buildKursk(){
   addCollider(new THREE.Box3(new V3(-58.85,0,4.15),new V3(-57.15,0.8,5.85)));
 
   // ---- trees (blocky) ----
-  function tree(x,z,s=1){
-    sBox(x,0,z,0.45*s,2.6*s,0.45*s,K.trunk,false);
-    for(let i=0;i<3;i++){ const r=(1.3-i*0.25)*s; addGeo(new RoundedBoxGeometry(r*2,r*1.4,r*2,2,0.25),K.leaf[(rnd()*3)|0],x+(rnd()-.5)*0.6*s,2.6*s+i*0.9*s,z+(rnd()-.5)*0.6*s,0,rnd()*3,0); }
-    addCollider(new THREE.Box3(new V3(x-0.25*s,0,z-0.25*s),new V3(x+0.25*s,3*s,z+0.25*s)));
-  }
+  const buildTree=()=>{ const a=[[new THREE.BoxGeometry(0.45,2.6,0.45),0x4a3a2a,0,1.3,0]], greens=[0x4d6b2e,0x5a7a34,0x40602a];
+    for(let i=0;i<3;i++){ const r=1.3-i*0.25; a.push([new RoundedBoxGeometry(r*2,r*1.4,r*2,2,0.25),greens[i],(i-1)*0.2,2.6+i*0.9,(1-i)*0.15,0,i*0.9,0]); } return a; };
+  function tree(x,z,s=1){ addProp('ktree',buildTree,x,z,rnd()*6,s,0.5*s,3*s); }
   for(let z=-64;z<=64;z+=4.5) tree(-62+rnd()*3,z+rnd()*2,0.9+rnd()*0.4);
   for(let x=-58;x<=62;x+=5) tree(x+rnd()*2,-64+rnd()*3,0.9+rnd()*0.4);
   for(const [cx,cz] of [[55,-42],[52,44],[-10,46],[22,48],[-58,40],[60,0]])
@@ -1188,8 +1277,9 @@ function buildMoscow(){
   }
   house(-22,40,false); house(-34,30,true); house(-22,26,false); house(24,36,true); house(36,46,false); house(24,24,false); house(-42,52,false);
   for(let i=0;i<34;i++){ let x,z; do{ x=(rnd()<.5?-1:1)*(40+rnd()*26); z=-6+rnd()*72; }while(Math.abs(z-30)<4 && Math.abs(x)<52); pine(x,z); }
-  function birch(x,z){ const h=5+rnd()*3; addGeo(new THREE.CylinderGeometry(0.1,0.14,h,6),K.birch,x,h/2,z); for(let i=0;i<4;i++) addGeo(new THREE.BoxGeometry(0.16,0.04,0.02),M.dark,x,0.8+i*h/5,z+0.12);
-    addCollider(new THREE.Box3(new V3(x-0.15,0,z-0.15),new V3(x+0.15,h,z+0.15))); }
+  const buildBirch=()=>{ const a=[[new THREE.CylinderGeometry(0.1,0.14,6,6),0xe6e2d8,0,3,0]]; for(let i=0;i<4;i++) a.push([new THREE.BoxGeometry(0.16,0.04,0.03),0x1d1c1a,0,0.8+i*1.2,0.12]);
+    a.push([new THREE.SphereGeometry(1.1,7,5),0x8a8a70,0,5.6,0]); return a; };
+  function birch(x,z){ const h=5+rnd()*3; addProp('birch',buildBirch,x,z,rnd()*6,h/6,0.3,h); }
   for(let i=0;i<24;i++){ const x=(rnd()<.5?-1:1)*(10+rnd()*24), z=14+rnd()*50; if(roofZones.some(r=>x>r[0]-2&&x<r[2]+2&&z>r[1]-2&&z<r[3]+2)) continue; birch(x,z); }
   // anti-tank ditch across the fields, with gaps
   for(const [x0,x1] of [[-62,-7],[7,26],[32,62]]){ const cx=(x0+x1)/2, Lx=x1-x0;
@@ -1229,6 +1319,37 @@ function buildMoscow(){
   addFire(-60,0,-90,4,false); addFire(40,0,-100,4.5,false);
 }
 
+/* ================= DUEL ARENA: a ruined Stalingrad courtyard (1v1) ================= */
+const DUEL_SPAWNS={a:[[-8,24],[0,26],[8,24]], b:[[-8,-24],[0,-26],[8,-24]]};
+function buildDuel(){
+  const D=30;
+  // arena walls: tall ruined blocks all round (you can't leave the courtyard)
+  for(const sd of [-1,1]){
+    sBox(0,0,sd*(D+1),2*D+4,7+rnd()*2,2,M.brick[1]); sBox(sd*(D+1),0,0,2,7,2*D+4,M.brick[0]);
+    for(let i=0;i<12;i++){ const x=-D+i*5+2.5; sBox(x,6,sd*(D+0.2),3,2+rnd()*4,0.6,M.brick[(i%3)],false); sBox(sd*(D+0.2),6,x,0.6,2+rnd()*4,3,M.plaster[(i%3)],false); }
+  }
+  sBox(0,0.01,0,2*D,0.01,2*D,M.slush,false);
+  // the fountain in the middle (cover from all sides)
+  const ring=new THREE.CylinderGeometry(3.4,3.6,0.9,24,1,true); addGeo(ring,M.concrete,0,0.45,0); addCollider(new THREE.Box3(new V3(-3.4,0,-3.4),new V3(3.4,0.9,3.4)));
+  addGeo(new THREE.CylinderGeometry(3.3,3.3,0.06,24),M.snow,0,0.62,0); addGeo(new THREE.CylinderGeometry(0.4,0.6,2.2,10),M.concrete,0,1.1,0);
+  // cover is placed with point symmetry, so both spawns get exactly the same layout
+  for(const sd of [1,-1]){
+    const P=(x,z)=>[x*sd,z*sd];
+    const zA = sd>0 ? [14,24] : [-24,-14], door = sd>0 ? 's' : 'n';
+    ruinedBuilding(-26,zA[0],-14,zA[1],2,sd>0?'brick':'plaster',{e:[3,7],[door]:[5]});
+    ruinedBuilding(14,zA[0],26,zA[1],2,sd>0?'plaster':'brick',{w:[3,7],[door]:[5]});
+    sandbags(-6,12*sd,5); sandbags(6.5,12*sd,5);
+    rubble(...P(-11,6),1.8,12); rubble(...P(12,5),1.6,12);
+    ruinWall(sd>0?-21:15,4*sd,6,true,1.2);
+    crater(...P(-4,18),1.8); crater(...P(20,9),1.6);
+    hedgehog(...P(4,18)); hedgehog(...P(-17,10));
+  }
+  wreckTruck(-14,-1,0.4); wreckTank(16,1,2.8,false);
+  flushBatch(true);
+  addFire(-20,0,19,1.2,true); addFire(20,0,-19,1.2,true); addFire(16,1.6,1,1.0,false);
+  addFire(-60,0,-70,3.5,false); addFire(50,0,80,3.5,false);
+}
+
 /* ================= MAPS ================= */
 const MAPS={
   stalingrad:{id:'stalingrad',name:'Stalingrad · Winter 1942',short:'STALINGRAD',build:buildStalingrad,snow:true,mode:'infantry',total:50,tex:snowTex,
@@ -1245,9 +1366,11 @@ const MAPS={
   moscow:{id:'moscow',name:'Moscow · December 1941',short:'MOSCOW',build:buildMoscow,snow:true,mode:'mixed',total:4,tex:snowTex,maxActive:IS_TOUCH?10:14,
     sky:0x9aa2ab,fog:[10,115],hemi:[0xdde4ee,0x5a5650,1.35],sun:[0xfff0dc,1.4],
     tank:{total:4,start:[0,58],allies:[[-8,64],[8,64],[0,68]],spawns:[[-30,-8],[30,-10],[0,-18],[-24,-20],[24,-20],[-45,6],[45,2],[0,-48]],maxActive:4,hunt:true,
-      inf:{ally:[[-5,62],[5,62],[-4,66],[4,66]],enemy:[[-10,-18],[10,-18],[-4,-30],[4,-30],[-20,-6],[20,-6]],at:1}}}
+      inf:{ally:[[-5,62],[5,62],[-4,66],[4,66]],enemy:[[-10,-18],[10,-18],[-4,-30],[4,-30],[-20,-6],[20,-6]],at:1}}},
+  duel:{id:'duel',name:'Duel · Stalingrad courtyard',short:'DUEL',build:buildDuel,snow:true,mode:'duel',total:0,tex:snowTex,
+    sky:0x8c9096,fog:[12,110],hemi:[0xd6dce4,0x5a5048,1.35],sun:[0xffe2c4,1.5]}
 };
-const MAP_ORDER=['stalingrad','kursk','berlin','seelow','moscow'];   // (order only sets each map's random seed)
+const MAP_ORDER=['stalingrad','kursk','berlin','seelow','moscow','duel'];   // (order only sets each map's random seed)
 const WAVES_PER_MAP=5;
 let currentMap=null;
 function buildMap(id){
@@ -1255,10 +1378,12 @@ function buildMap(id){
   // clear the old map
   for(const c of [...mapRoot.children]){ mapRoot.remove(c); c.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); }
   colliders.length=0; shootables.length=0; shootables.push(ground); fires.length=0; batch.clear(); roofZones=[];
+  props=[]; propKinds={}; falling.length=0;
   seed=1942+MAP_ORDER.indexOf(id)*1000;
   mapSnow=Mp.snow;
   addBorders();
   Mp.build();
+  flushProps();
   // look & weather
   scene.background.setHex(Mp.sky); scene.fog.color.setHex(Mp.sky); scene.fog.near=Mp.fog[0]; scene.fog.far=Mp.fog[1];
   hemi.color.setHex(Mp.hemi[0]); hemi.groundColor.setHex(Mp.hemi[1]); hemi.intensity=Mp.hemi[2];
@@ -1343,7 +1468,7 @@ function insideBuilding(x,z){
 function pickShellTarget(){
   const c=artCentre(), r=Math.random();
   if(r<0.2){ // smash into a nearby wall (outside face only) for atmosphere
-    const walls=colliders.filter(b=>b.max.y>3.2 && b.max.y-b.min.y<30 && !b.noBullet && b.max.x-b.min.x<40 && b.max.z-b.min.z<40 && Math.hypot((b.min.x+b.max.x)/2-c.x,(b.min.z+b.max.z)/2-c.z)<55 && Math.hypot((b.min.x+b.max.x)/2-c.x,(b.min.z+b.max.z)/2-c.z)>10);
+    const walls=colliders.filter(b=>!b.prop && b.max.y>3.2 && b.max.y-b.min.y<30 && !b.noBullet && b.max.x-b.min.x<40 && b.max.z-b.min.z<40 && Math.hypot((b.min.x+b.max.x)/2-c.x,(b.min.z+b.max.z)/2-c.z)<55 && Math.hypot((b.min.x+b.max.x)/2-c.x,(b.min.z+b.max.z)/2-c.z)>10);
     if(walls.length){
       const b=walls[(Math.random()*walls.length)|0], cx=(b.min.x+b.max.x)/2, cz=(b.min.z+b.max.z)/2;
       const ax = Math.abs(c.x-cx)/Math.max(0.3,b.max.x-b.min.x) > Math.abs(c.z-cz)/Math.max(0.3,b.max.z-b.min.z);
@@ -1414,9 +1539,9 @@ function updateArtillery(dt,t){
 /* ================= FACTIONS & WEAPONS ================= */
 const SIDES = {
   soviet:{ title:'RED ARMY', uniform:0x7f7651, pants:0x6c6547, helmet:0x4a5537, boots:0x2a2018, color:'#e0604f',
-    weapons:['ppsh','mosin'], names:['Pvt. Volkov','Sgt. Petrov','Pvt. Sokolov','Cpl. Morozov','Pvt. Lebedev','Pvt. Orlov','Pvt. Kuznetsov','Pvt. Popov','Cpl. Vasiliev','Pvt. Pavlov','Pvt. Semyonov','Pvt. Golubev','Sgt. Vinogradov','Pvt. Bogdanov','Pvt. Fyodorov'] },
+    weapons:['ppsh','mosin'], names:['Pvt. Volkov','Sgt. Petrov','Pvt. Sokolov','Cpl. Morozov','Pvt. Lebedev','Pvt. Orlov','Pvt. Kuznetsov','Pvt. Popov','Cpl. Vasiliev','Pvt. Pavlov','Pvt. Semyonov','Pvt. Golubev','Sgt. Vinogradov','Pvt. Bogdanov','Pvt. Fyodorov','Pvt. Nikitin','Cpl. Zaitsev','Pvt. Belov','Pvt. Komarov','Pvt. Gusev','Sgt. Titov'] },
   german:{ title:'WEHRMACHT', uniform:0x5c6355, pants:0x545a4e, helmet:0x575c53, boots:0x1e1c1a, color:'#b9c2b0',
-    weapons:['mp40','kar98k'], names:['Gefr. Becker','Uffz. Krüger','Schütze Hartmann','Obgefr. Lang','Schütze Vogel','Gefr. Braun','Schütze Weber','Gefr. Fischer','Schütze Schulz','Obgefr. Wolf','Schütze Neumann','Gefr. Schwarz','Uffz. Zimmermann','Schütze Koch','Gefr. Richter'] }
+    weapons:['mp40','kar98k'], names:['Gefr. Becker','Uffz. Krüger','Schütze Hartmann','Obgefr. Lang','Schütze Vogel','Gefr. Braun','Schütze Weber','Gefr. Fischer','Schütze Schulz','Obgefr. Wolf','Schütze Neumann','Gefr. Schwarz','Uffz. Zimmermann','Schütze Koch','Gefr. Richter','Schütze Klein','Gefr. Wagner','Obgefr. Hoffmann','Schütze Schäfer','Gefr. Bauer','Uffz. Krause'] }
 };
 const WEAPONS = {
   ppsh:  {name:'PPSh-41',            desc:'SMG · 71-round drum · very fast fire', auto:true,  rate:0.067,mag:71,reserve:213,reload:2.8,spread:0.03, recoil:0.010,heavy:false},
@@ -1441,7 +1566,7 @@ function makeWeapon(type){
   const wood=mat(0x6b4423,{roughness:.7}), wood2=mat(0x5a3519,{roughness:.7});
   const dark=mat(0x2a2a2c,{roughness:.4,metalness:.7}), steel=mat(0x9a9a9a,{roughness:.3,metalness:.85});
   const add=(m,x,y,z,rx=0,ry=0,rz=0)=>{ m.position.set(x,y,z); m.rotation.set(rx,ry,rz); g.add(m); return m; };
-  let muzzle, fore, sightY;
+  let muzzle, fore, sightY, mag=null, boltH=null, rl='mag';
   const base = type==='mosinSn'?'mosin' : type==='kar98kSn'?'kar98k' : type;
   if(base==='ppsh'){
     add(box(0.045,0.09,0.3,wood),0,-0.025,0.2);
@@ -1449,7 +1574,7 @@ function makeWeapon(type){
     add(box(0.05,0.065,0.24,dark),0,0.02,-0.12);
     add(cyl(0.024,0.024,0.26,dark),0,0.02,-0.36,H);
     add(cyl(0.009,0.009,0.06,dark),0,0.02,-0.51,H);
-    add(cyl(0.085,0.085,0.055,dark,18),0,-0.07,-0.1,0,0,H);
+    mag=add(cyl(0.085,0.085,0.055,dark,18),0,-0.07,-0.1,0,0,H);
     add(box(0.012,0.03,0.02,dark),0,0.065,-0.03);
     add(box(0.006,0.03,0.006,dark),0,0.05,-0.47);
     muzzle=new V3(0,0.02,-0.55); fore=new V3(0,-0.03,-0.24); sightY=0.07;
@@ -1458,8 +1583,9 @@ function makeWeapon(type){
     add(box(0.045,0.06,0.8,wood),0,0,-0.3);
     add(cyl(0.012,0.014,0.95,dark),0,0.035,-0.4,H);
     add(box(0.04,0.04,0.18,dark),0,0.04,-0.02);
-    add(cyl(0.006,0.006,0.08,dark),0.04,0.04,0.03,0,0,H);
-    add(new THREE.Mesh(new THREE.SphereGeometry(0.014,8,6),dark),0.08,0.04,0.03);
+    boltH=new THREE.Group(); boltH.position.set(0,0.04,0.03); g.add(boltH);            // bolt pivot: handle swings up, then slides back
+    { const h=cyl(0.006,0.006,0.08,dark); h.rotation.z=H; h.position.set(0.04,0,0); boltH.add(h); const k=new THREE.Mesh(new THREE.SphereGeometry(0.014,8,6),dark); k.position.set(0.08,0,0); boltH.add(k); }
+    rl='clip';
     add(cyl(0.007,0.003,0.43,steel),0,0.01,-1.08,H);
     add(box(0.006,0.02,0.006,dark),0,0.055,-0.86);
     muzzle=new V3(0,0.035,-0.88); fore=new V3(0,-0.03,-0.42); sightY=0.062;
@@ -1467,7 +1593,7 @@ function makeWeapon(type){
     add(cyl(0.022,0.022,0.3,dark),0,0.02,-0.1,H);
     add(cyl(0.011,0.011,0.24,dark),0,0.02,-0.36,H);
     add(box(0.03,0.05,0.06,dark),0,0.012,-0.47);
-    add(box(0.03,0.22,0.045,dark),0,-0.12,-0.13);
+    mag=add(box(0.03,0.22,0.045,dark),0,-0.12,-0.13);
     add(box(0.035,0.11,0.05,mat(0x3a2a20,{roughness:.5})),0,-0.05,0.02,0.25);
     add(box(0.01,0.01,0.25,dark),0.025,0,0.17); add(box(0.01,0.01,0.25,dark),-0.025,0,0.17);
     add(box(0.07,0.06,0.012,dark),0,-0.02,0.3);
@@ -1479,7 +1605,7 @@ function makeWeapon(type){
     add(box(0.045,0.06,0.55,wd),0,0,-0.2);
     add(cyl(0.012,0.014,0.7,dark),0,0.035,-0.3,H);
     add(box(0.042,0.05,0.2,dark),0,0.04,-0.02);
-    add(box(0.035,0.09,0.07,dark),0,-0.06,-0.02);                      // detachable magazine
+    mag=add(box(0.035,0.09,0.07,dark),0,-0.06,-0.02);                  // detachable magazine
     if(base==='svt40') add(cyl(0.02,0.02,0.07,dark),0,0.035,-0.68,H);   // muzzle brake
     else add(box(0.02,0.03,0.25,dark),0,0.06,-0.25);                    // gas tube
     add(box(0.006,0.02,0.006,dark),0,0.055,-0.62);
@@ -1488,7 +1614,7 @@ function makeWeapon(type){
     add(box(0.04,0.07,0.2,dark),0,0.02,-0.1);
     add(box(0.05,0.06,0.28,dark),0,0.025,-0.32);
     for(let i=0;i<4;i++) add(box(0.052,0.02,0.03,M.dark),0,0.055,-0.22-i*0.06);
-    add(box(0.03,0.2,0.04,dark),0,-0.1,-0.1,-0.35);                     // curved mag
+    mag=add(box(0.03,0.2,0.04,dark),0,-0.1,-0.1,-0.35);                 // curved mag
     add(box(0.03,0.08,0.04,mat(0x3a2a20)),0,-0.05,0.04,0.2);
     add(box(0.01,0.01,0.26,steel),0.022,0.0,0.17); add(box(0.01,0.01,0.26,steel),-0.022,0.0,0.17); add(box(0.05,0.07,0.012,dark),0,-0.02,0.3);
     muzzle=new V3(0,0.025,-0.47); fore=new V3(0,-0.1,-0.1); sightY=0.06;
@@ -1496,7 +1622,7 @@ function makeWeapon(type){
     add(box(0.04,0.08,0.3,dark),0,0.02,-0.08);
     add(cyl(0.012,0.012,0.36,dark),0,0.03,-0.38,H);
     add(box(0.035,0.05,0.12,wood2),0,0.02,-0.26);
-    add(box(0.03,0.22,0.045,dark),0,-0.12,-0.12,-0.3);                  // long curved mag
+    mag=add(box(0.03,0.22,0.045,dark),0,-0.12,-0.12,-0.3);              // long curved mag
     add(box(0.035,0.1,0.045,dark),0,-0.06,0.06,0.25);
     add(box(0.045,0.09,0.24,wood2),0,-0.01,0.2);
     add(box(0.008,0.03,0.01,dark),0,0.07,-0.52); add(box(0.02,0.025,0.02,dark),0,0.07,-0.02);
@@ -1506,7 +1632,7 @@ function makeWeapon(type){
     add(box(0.045,0.07,0.3,dark),0,0.0,-0.05);
     add(cyl(0.028,0.028,0.5,dark),0,0.02,-0.45,H);                       // cooling jacket
     add(cyl(0.01,0.01,0.12,dark),0,0.02,-0.76,H);
-    add(cyl(0.13,0.13,0.035,dark,22),0,0.075,-0.07);                     // flat pan magazine on top
+    mag=add(cyl(0.13,0.13,0.035,dark,22),0,0.075,-0.07); rl='pan';      // flat pan magazine on top
     add(cyl(0.006,0.006,0.3,steel),0.05,-0.1,-0.55,0.4,0,0.3); add(cyl(0.006,0.006,0.3,steel),-0.05,-0.1,-0.55,0.4,0,-0.3); // bipod
     add(box(0.006,0.03,0.006,dark),0,0.06,-0.66);
     muzzle=new V3(0,0.02,-0.83); fore=new V3(0,-0.02,-0.32); sightY=0.065;
@@ -1516,7 +1642,7 @@ function makeWeapon(type){
     add(box(0.06,0.06,0.42,dark),0,0.02,-0.42);                         // perforated jacket
     for(let i=0;i<6;i++) add(box(0.062,0.025,0.035,M.dark),0,0.025,-0.27-i*0.06);
     add(cyl(0.022,0.03,0.08,dark),0,0.02,-0.66,H);
-    add(cyl(0.07,0.07,0.08,mat(0x4a4a3c),16),0.07,-0.05,-0.05,0,0,H);   // belt drum
+    mag=add(cyl(0.07,0.07,0.08,mat(0x4a4a3c),16),0.07,-0.05,-0.05,0,0,H); rl='drum';   // belt drum
     add(cyl(0.006,0.006,0.3,steel),0.05,-0.1,-0.5,0.4,0,0.3); add(cyl(0.006,0.006,0.3,steel),-0.05,-0.1,-0.5,0.4,0,-0.3);
     add(box(0.006,0.035,0.006,dark),0,0.065,-0.6);
     muzzle=new V3(0,0.02,-0.72); fore=new V3(0,-0.02,-0.3); sightY=0.07;
@@ -1525,8 +1651,9 @@ function makeWeapon(type){
     add(box(0.045,0.06,0.68,wood2),0,0,-0.26);
     add(cyl(0.012,0.014,0.78,dark),0,0.035,-0.33,H);
     add(box(0.04,0.04,0.17,dark),0,0.04,-0.02);
-    add(cyl(0.005,0.005,0.07,dark),0.035,0.02,0.03,0,0,H+0.6);
-    add(new THREE.Mesh(new THREE.SphereGeometry(0.014,8,6),dark),0.062,0.0,0.03);
+    boltH=new THREE.Group(); boltH.position.set(0,0.04,0.03); g.add(boltH);
+    { const h=cyl(0.005,0.005,0.07,dark); h.rotation.z=H+0.6; h.position.set(0.03,-0.02,0); boltH.add(h); const k=new THREE.Mesh(new THREE.SphereGeometry(0.014,8,6),dark); k.position.set(0.062,-0.04,0); boltH.add(k); }
+    rl='clip';
     add(box(0.006,0.02,0.006,dark),0,0.055,-0.7);
     muzzle=new V3(0,0.035,-0.73); fore=new V3(0,-0.03,-0.36); sightY=0.062;
   }
@@ -1536,7 +1663,7 @@ function makeWeapon(type){
     sightY=0.1;
   }
   const mz=new THREE.Object3D(); mz.position.copy(muzzle); g.add(mz);
-  g.userData={muzzle:mz,fore,sightY};
+  g.userData={muzzle:mz,fore,sightY,mag,boltH,rl,magPos:mag?mag.position.clone():null,magRot:mag?mag.rotation.clone():null,boltRot:boltH?boltH.rotation.clone():null};
   return g;
 }
 
@@ -1731,13 +1858,14 @@ function makeBoxSoldier(sideKey,weaponKey,label){
 
 function animateBoxSoldier(s,dt,t){
   const sp=s.speed;
+  s.crouchK=(s.crouchK||0)+(((s.wantCrouch?1:0))-(s.crouchK||0))*Math.min(1,dt*8); const ck=s.crouchK;
   s.phase += dt*sp*(sp>3.4?2.4:3.2);
   const a=Math.min(1,sp/1.2), run=Math.max(0,Math.min(1,(sp-3)/2.5));
   const sw=Math.sin(s.phase)*(0.65+0.35*run)*a;
-  s.legs[0].rotation.x=sw; s.legs[1].rotation.x=-sw;
+  s.legs[0].rotation.x=sw*(1-ck)-1.25*ck; s.legs[1].rotation.x=-sw*(1-ck)-0.25*ck;
   s.armL.rotation.x=-sw*0.9;
   s.armR.rotation.x=Math.PI/2-0.06+(s.aimPitch||0)+Math.sin(s.phase*2)*0.04*a;
-  s.body.position.y=Math.abs(Math.sin(s.phase))*0.03*a;
+  s.body.position.y=Math.abs(Math.sin(s.phase))*0.03*a-0.5*ck;
   s.flinch=Math.max(0,s.flinch-dt*3);
   s.body.rotation.x = 0.08*run - s.flinch*0.25;
   s.body.rotation.z = s.flinch*0.15*s.flinchDir;
@@ -1876,8 +2004,13 @@ function animateSoldier(s,dt,t){
 
 /* ================= SQUADS ================= */
 let mates=[], enemies=[], avatar=null;
-const SQUAD_MATES=14;   // you + 14 = 15 on our side
-const FORM=(()=>{ const f=[]; [2,4,4,4].forEach((n,r)=>{ for(let k=0;k<n;k++) f.push(new V3((k-(n-1)/2)*2.4,0,1.9*(r+1))); }); return f; })();
+// squad size is picked in the briefing (5 / 10 / 14 / 20 teammates)
+const SQUAD_OPTIONS=[5,10,14,20];
+let SQUAD_MATES=14; try{ const v=+localStorage.getItem('ef_squad'); if(SQUAD_OPTIONS.includes(v)) SQUAD_MATES=v; }catch(e){}
+let FORM=[];
+function buildForm(n){ const rows=n<=5?[2,3]:n<=10?[2,4,4]:n<=14?[2,4,4,4]:[2,6,6,6]; FORM=[];
+  rows.forEach((k,r)=>{ for(let i=0;i<k;i++) FORM.push(new V3((i-(k-1)/2)*2.4,0,1.9*(r+1))); }); FORM=FORM.slice(0,n); }
+buildForm(SQUAD_MATES);
 const SPAWN=new V3(0,0,32);
 
 function clearSoldiers(){
@@ -1960,7 +2093,7 @@ function bulletTrace(origin,dir,maxDist,ignore){
     if(_bray.intersectBox(c,_bp)){ const d=_bp.distanceTo(origin); if(d>0.05 && d<best.dist){ best={dist:d,point:_bp.clone(),normal:boxNormal(c,_bp),soldier:null,head:false,ground:false}; } }
   }
   if(dir.y<-1e-4){ const t=-origin.y/dir.y; if(t<best.dist){ best={dist:t,point:origin.clone().addScaledVector(dir,t),normal:new V3(0,1,0),soldier:null,head:false,ground:true}; } }
-  const roots=[]; for(const s of [...mates,...enemies]) if(!s.dead && s!==ignore) roots.push(s.root);
+  const roots=[]; for(const s of [...mates,...enemies,...(remoteAv&&isDuel()?[remoteAv]:[])]) if(!s.dead && s!==ignore) roots.push(s.root);
   _rc.set(origin,dir); _rc.far=best.dist;
   const hits=_rc.intersectObjects(roots,true);
   if(hits.length){
@@ -2029,6 +2162,7 @@ function throwGrenade(){
   scene.add(m);
   const vel=dir.clone().multiplyScalar(15.5).add(new V3(0,3.2,0)).add(new V3(player.vel.x,0,player.vel.z).multiplyScalar(0.5));
   grenades.push({m,pos:m.position,vel,fuse:2.6,spin:new V3(Math.random()*12-6,Math.random()*6,Math.random()*12-6),owner:'player'});
+  if(isDuel()) duelSend({t:'nade',p:arr(m.position),v:arr(vel),f:2.6});
   sndClick(0,900,0.3); noise(0.18,1400,0.12,'bandpass',null,0.05);
 }
 const _gq=new V3();
@@ -2095,7 +2229,7 @@ let lastHeadshot=false, wave=1, kills=0, waveTimer=0, playerHP=100, hurtT=0, las
 let visCols=null;
 const _ray3=new THREE.Ray(), _hp=new V3();
 function lineOfSight(a,b){
-  if(!visCols) visCols=colliders.filter(c=>c.max.y>1.3 && c.max.y-c.min.y<40);
+  if(!visCols) visCols=colliders.filter(c=>c.max.y>0.7 && c.max.y-c.min.y<40 && !c.noBullet);   // low walls and sandbags hide crouching soldiers
   const dir=b.clone().sub(a), dist=dir.length(); if(dist<0.01) return true; dir.divideScalar(dist);
   _ray3.set(a,dir);
   for(const c of visCols){ if(_ray3.intersectBox(c,_hp) && _hp.distanceToSquared(a)<(dist-0.4)*(dist-0.4)) return false; }
@@ -2110,21 +2244,24 @@ const tracers=[];
 function initAI(s,team,mode){
   if(!s.weaponObj){ const o=new THREE.Object3D(); o.position.set(0.3,1.3,-0.6); s.root.add(o); s.weaponObj={userData:{muzzle:o}}; }
   s.team=team; s.hp=100; s.dead=false; s.deadT=0;
-  s.ai={state:mode,target:null,seen:false,lastSeen:new V3(),lostT:0,react:0,shotT:0,burst:0,thinkT:Math.random()*0.3,strafeT:1+Math.random()*2,strafeTo:null,objective:null,alertPos:null};
+  s.ai={state:mode,target:null,seen:false,lastSeen:new V3(),lostT:0,react:0,shotT:0,burst:0,thinkT:Math.random()*0.3,strafeT:1+Math.random()*2,strafeTo:null,objective:null,alertPos:null,
+        ammo:WEAPONS[s.weapon]?WEAPONS[s.weapon].mag:30,reloadT:0,nades:1,nadeT:4+Math.random()*4,cover:null,coverT:0,peekT:0,ducking:false};
+  s.crouchK=0; s.wantCrouch=false;
   const ex=new THREE.Sprite(new THREE.SpriteMaterial({map:alertTex,transparent:true,depthTest:false,fog:false}));
   ex.scale.set(0.5,0.5,1); ex.position.y=2.35; ex.visible=false; ex.raycast=()=>{}; s.root.add(ex); s.alertSprite=ex; s.alertT=0;
   const fl=new THREE.Sprite(aiFlashMat); fl.scale.setScalar(0.45); fl.visible=false; fl.raycast=()=>{};
   s.weaponObj.userData.muzzle.add(fl); s.muzzleFlash=fl; s.flashT=0;
 }
 const playerTarget={isPlayer:true};
-function targetPoint(t){ return t.isPlayer ? camera.position.clone().add(new V3(0,-0.3,0)) : t.pos.clone().add(new V3(0,1.25,0)); }
+function targetPoint(t){ return t.isPlayer ? camera.position.clone().add(new V3(0,-0.3,0)) : t.pos.clone().add(new V3(0,1.25-0.5*(t.crouchK||0),0)); }
 function targetPos(t){ return t.isPlayer ? player.pos : t.pos; }
 function opponentsOf(s){
   if(s.team==='enemy'){ const l=mates.filter(m=>!m.dead); if(!playerDead) l.push(playerTarget); return l; }
   return enemies.filter(e=>!e.dead);
 }
 function aiThink(s){
-  const ai=s.ai, eye=s.pos.clone().add(new V3(0,1.55,0));
+  const ai=s.ai; if(ai.ducking && ai.state==='combat') return;      // keeping their head down on purpose
+  const eye=s.pos.clone().add(new V3(0,1.55-0.5*(s.crouchK||0),0));
   let best=null, bd=1e9;
   for(const o of opponentsOf(s)){
     const tp=targetPos(o), d=Math.hypot(tp.x-s.pos.x,tp.z-s.pos.z);
@@ -2133,7 +2270,7 @@ function aiThink(s){
     best=o; bd=d;
   }
   if(best){
-    if(ai.state!=='combat' || !ai.seen){ ai.react = (s.team==='enemy'?0.55:0.35)+Math.random()*0.6; if(s.team==='enemy'&&ai.state!=='combat'){ s.alertT=1.3; } }
+    if(ai.state!=='combat' || !ai.seen){ ai.react = (s.team==='enemy'?0.5:0.25)+Math.random()*0.5; if(s.team==='enemy'&&ai.state!=='combat'){ s.alertT=1.3; } }
     ai.state='combat'; ai.target=best; ai.seen=true; ai.lostT=0; ai.lastSeen.copy(targetPos(best));
   } else {
     ai.seen=false;
@@ -2153,15 +2290,18 @@ function aiFire(s){
   const W=WEAPONS[s.weapon], t=s.ai.target; if(!t) return;
   const muzzle=new V3(); s.weaponObj.userData.muzzle.getWorldPosition(muzzle);
   const tp=targetPoint(t), dist=muzzle.distanceTo(tp);
-  let chance=0.4*(1-dist/90);
+  let chance=(s.team==='ally'?0.48:0.4)*(1-dist/90);
   if(W.auto && dist>35) chance*=0.55;
+  if(!t.isPlayer && t.crouchK) chance*=1-0.45*t.crouchK;           // harder to hit someone ducking behind cover
+  if(s.speed<0.4) chance*=1.12;                                      // steady, braced shot
   if(t.isPlayer){
     const hs=Math.hypot(player.vel.x,player.vel.z);
     if(hs>3) chance*=0.55; else if(hs<0.5) chance*=1.1;
     if(player.crouch) chance*=0.6;
   } else if(t.speed>2) chance*=0.7;
   if(s.speed>1) chance*=0.6;
-  chance=Math.max(0.03,Math.min(0.45,chance));
+  chance=Math.max(0.03,Math.min(s.team==='ally'?0.55:0.45,chance));
+  s.ai.ammo--; if(s.ai.ammo<=0){ s.ai.reloadT=W.reload*1.15; s.ai.burst=0; const cd=s.pos.distanceTo(camera.position); if(cd<25) play(SB.magOut,0.5*Math.min(1,5/(cd+1))); }
   const hit=Math.random()<chance;
   const aim = hit ? tp : tp.clone().add(new V3((Math.random()-.5)*2.6,(Math.random()-.4)*1.5,(Math.random()-.5)*2.6));
   const dir=aim.clone().sub(muzzle).normalize();
@@ -2218,6 +2358,7 @@ function damagePlayer(dmg,from){
 }
 let deathReason=null;
 function playerDies(){
+  if(isDuel()){ if(!playerDead) duelPlayerDied(); return; }
   mstats.deaths++;
   playerDead=true; state='dead'; mouseDown=rmb=false;
   sting('death'); musicStop(2);
@@ -2304,6 +2445,46 @@ function onEnemyKilled(){
   if(battle.killed%5===0) writeSave(true);
 }
 
+// ---------- smarter infantry AI: cover, crouching, peeking, reloading, grenades ----------
+// look for a spot behind something solid, on the far side from the threat
+function findCover(s,threat,anchor,maxR){
+  const from=anchor||s.pos, R=maxR||12; let best=null, bs=1e9;
+  const tEye=threat.clone().add(new V3(0,1.4,0));
+  let n=0;
+  for(const c of colliders){
+    if(c.noBullet || c.max.y<0.7 || c.max.y-c.min.y>25) continue;
+    const cx=(c.min.x+c.max.x)/2, cz=(c.min.z+c.max.z)/2;
+    if(Math.abs(cx-from.x)>R+3 || Math.abs(cz-from.z)>R+3) continue;
+    const hw=(c.max.x-c.min.x)/2, hd=(c.max.z-c.min.z)/2;
+    if(hw>8 || hd>8) continue;
+    let ax=cx-threat.x, az=cz-threat.z; const L=Math.hypot(ax,az)||1; ax/=L; az/=L;
+    // step just past the collider's edge, away from the threat
+    const reach=Math.abs(ax)*hw+Math.abs(az)*hd+0.75;
+    const px=cx+ax*reach, pz=cz+az*reach;
+    if(Math.hypot(px-from.x,pz-from.z)>R) continue;
+    const pt=new V3(px,0,pz);
+    if(blocked(pt,0.32,1.0)) continue;
+    // does it really hide a crouching soldier?
+    if(lineOfSight(tEye,pt.clone().add(new V3(0,0.75,0)))) continue;
+    const score=Math.hypot(px-s.pos.x,pz-s.pos.z)*1.0 + (s.team==='enemy'?Math.hypot(px-threat.x,pz-threat.z)*0.35:Math.hypot(px-from.x,pz-from.z)*0.5)
+              + (c.max.y<1.3?0:1.5);   // low cover is best (you can shoot over it)
+    if(score<bs){ bs=score; best=pt; }
+    if(++n>60) break;
+  }
+  return best;
+}
+function aiThrowGrenade(s,tp){
+  const W=s.weaponObj && s.weaponObj.userData.muzzle; const from=s.pos.clone().add(new V3(0,1.6,0));
+  const dx=tp.x-from.x, dz=tp.z-from.z, d=Math.hypot(dx,dz), T=Math.max(0.7,Math.min(1.5,d/14));
+  const aimX=tp.x+(Math.random()-.5)*d*0.15, aimZ=tp.z+(Math.random()-.5)*d*0.15;
+  const vel=new V3((aimX-from.x)/T,(0.06-from.y+0.5*14*T*T)/T,(aimZ-from.z)/T);
+  const m=makeGrenadeMesh(s.side); m.position.copy(from); scene.add(m);
+  grenades.push({m,pos:m.position,vel,fuse:2.4,spin:new V3(Math.random()*12-6,Math.random()*6,Math.random()*12-6),owner:s.team==='ally'?'mate':'enemy'});
+  s.ai.nades--; s.flinch=0.6;
+  if(s.team==='enemy' && player.pos.distanceTo(tp)<9) setTimeout(()=>{ if(state==='playing') showMsg('⚠ GRENADE! MOVE!',1.6); },350);
+}
+function friendsNear(s,p,r){ const list=s.team==='ally'?[...mates,(playerDead?null:playerTarget)]:enemies; for(const o of list){ if(!o || o===s || o.dead) continue; const op=o.isPlayer?player.pos:o.pos; if(Math.hypot(op.x-p.x,op.z-p.z)<r) return true; } return false; }
+
 function updateAI(s,dt,slot){
   const ai=s.ai;
   ai.thinkT-=dt; if(ai.thinkT<=0){ ai.thinkT=0.3; aiThink(s); }
@@ -2311,31 +2492,54 @@ function updateAI(s,dt,slot){
   let mx=s.pos.x, mz=s.pos.z, spd=0, faceT=null;
 
   if(ai.state==='combat' && ai.target){
-    const tp=targetPos(ai.target);
+    const tp=targetPos(ai.target), W=WEAPONS[s.weapon];
     faceT=tp;
-    ai.strafeT-=dt;
-    if(ai.strafeT<=0){
-      ai.strafeT=2+Math.random()*3;
-      if(Math.random()<0.55){ const dx=tp.x-s.pos.x, dz=tp.z-s.pos.z, L=Math.hypot(dx,dz)||1, side=Math.random()<.5?-1:1;
-        const fwd = s.team==='enemy' && L>25 ? 2.5 : (L<8?-2:0);
-        ai.strafeTo=new V3(s.pos.x+(-dz/L)*side*2.5+dx/L*fwd,0,s.pos.z+(dx/L)*side*2.5+dz/L*fwd); }
-      else ai.strafeTo=null;
+    // --- pick cover: behind something solid, between me and them (teammates stay near the player) ---
+    ai.coverT-=dt;
+    if(ai.coverT<=0 || (ai.cover && slot && Math.hypot(ai.cover.x-slot.x,ai.cover.z-slot.z)>11)){
+      ai.coverT=5+Math.random()*4; ai.cover=findCover(s,tp,slot||null,slot?9:12);
     }
-    if(ai.strafeTo){ mx=ai.strafeTo.x; mz=ai.strafeTo.z; spd=2.2; }
-    if(!ai.seen){ mx=ai.lastSeen.x; mz=ai.lastSeen.z; spd=s.team==='enemy'?2.4:0; }
+    let inCover=false;
+    if(ai.cover){ const dc=Math.hypot(ai.cover.x-s.pos.x,ai.cover.z-s.pos.z);
+      if(dc>0.6){ mx=ai.cover.x; mz=ai.cover.z; spd=dc>3?5.2:3; } else inCover=true; }
+    else {
+      ai.strafeT-=dt;
+      if(ai.strafeT<=0){
+        ai.strafeT=2+Math.random()*3;
+        if(Math.random()<0.55){ const dx=tp.x-s.pos.x, dz=tp.z-s.pos.z, L=Math.hypot(dx,dz)||1, side=Math.random()<.5?-1:1;
+          const fwd = s.team==='enemy' && L>25 ? 2.5 : (L<8?-2:0);
+          ai.strafeTo=new V3(s.pos.x+(-dz/L)*side*2.5+dx/L*fwd,0,s.pos.z+(dx/L)*side*2.5+dz/L*fwd); }
+        else ai.strafeTo=null;
+      }
+      if(ai.strafeTo){ mx=ai.strafeTo.x; mz=ai.strafeTo.z; spd=2.2; }
+    }
+    if(!ai.seen && !ai.ducking && !inCover){ mx=ai.lastSeen.x; mz=ai.lastSeen.z; spd=s.team==='enemy'?2.6:0; }
     // allies keep up with the player
-    if(slot && Math.hypot(slot.x-s.pos.x,slot.z-s.pos.z)>12){ mx=slot.x; mz=slot.z; spd=6; }
-    // shooting
-    if(ai.seen){
+    if(slot && Math.hypot(slot.x-s.pos.x,slot.z-s.pos.z)>14){ mx=slot.x; mz=slot.z; spd=6; ai.cover=null; ai.coverT=0.5; }
+    // --- in cover: duck, then pop up to shoot ---
+    ai.peekT-=dt;
+    if(inCover){ if(ai.peekT<=0){ ai.ducking=!ai.ducking; ai.peekT=ai.ducking?0.7+Math.random()*1.1:1.8+Math.random()*2.4; } }
+    else ai.ducking=false;
+    if(ai.reloadT>0){ ai.reloadT-=dt; if(inCover) ai.ducking=true;
+      if(ai.reloadT<=0){ ai.ammo=W.mag; const cd=s.pos.distanceTo(camera.position); if(cd<25) play(SB.magIn,0.5*Math.min(1,5/(cd+1))); } }
+    s.wantCrouch=ai.ducking;
+    // --- shooting ---
+    if(ai.seen && !ai.ducking && ai.reloadT<=0){
       ai.react-=dt; ai.shotT-=dt;
       if(ai.react<=0 && ai.shotT<=0){
-        const W=WEAPONS[s.weapon];
         aiFire(s);
         if(W.auto){ ai.burst++; if(ai.burst>=3+((Math.random()*3)|0)){ ai.burst=0; ai.shotT=0.8+Math.random()*1.0; } else ai.shotT=W.rate*1.6; }
-        else ai.shotT=1.6+Math.random()*1.2;
+        else ai.shotT=1.5+Math.random()*1.1;
       }
     }
-  } else if(ai.state==='follow' && slot){ mx=slot.x; mz=slot.z; spd=6.8; }
+    // --- grenades at targets hiding behind cover ---
+    ai.nadeT-=dt;
+    if(ai.nades>0 && ai.nadeT<=0 && protectT<=0){ ai.nadeT=3+Math.random()*3;
+      const lp=ai.seen?tp:ai.lastSeen, d=Math.hypot(lp.x-s.pos.x,lp.z-s.pos.z);
+      const hiding = !ai.seen || (ai.target.isPlayer ? player.crouch : (ai.target.crouchK||0)>0.5);
+      if(d>8 && d<24 && hiding && Math.random()<0.45 && !friendsNear(s,lp,6)) aiThrowGrenade(s,lp);
+    }
+  } else if(ai.state==='follow' && slot){ mx=slot.x; mz=slot.z; spd=6.8; s.wantCrouch = player.crouch && Math.hypot(slot.x-s.pos.x,slot.z-s.pos.z)<1.2; }
   else if(ai.state==='advance' && ai.objective){
     mx=ai.objective.x; mz=ai.objective.z; spd=2.6;
     if(Math.hypot(mx-s.pos.x,mz-s.pos.z)<1.5){
@@ -2478,31 +2682,35 @@ function makeTank(type,team,isPlayer){
   // gun (pitches)
   const gun=new THREE.Group(); gun.position.set(0,th*0.5,-tl/2); tur.add(gun);
   part(new THREE.BoxGeometry(0.75,0.5,0.35),paint,0,0,-0.1,0,0,0,gun);
-  part(new THREE.CylinderGeometry(T.br,T.br*1.2,T.barrel,10),steel,0,0,-T.barrel/2-0.2,Math.PI/2,0,0,gun);
-  if(type!=='t34') part(new THREE.CylinderGeometry(T.br*2,T.br*2,0.35,10),steel,0,0,-T.barrel-0.2,Math.PI/2,0,0,gun);   // muzzle brake
+  const barrelParts=[part(new THREE.CylinderGeometry(T.br,T.br*1.2,T.barrel,10),steel,0,0,-T.barrel/2-0.2,Math.PI/2,0,0,gun)];
+  if(type!=='t34') barrelParts.push(part(new THREE.CylinderGeometry(T.br*2,T.br*2,0.35,10),steel,0,0,-T.barrel-0.2,Math.PI/2,0,0,gun));   // muzzle brake
   const muzzle=new THREE.Object3D(); muzzle.position.set(0,0,-T.barrel-0.45); gun.add(muzzle);
   const fl=new THREE.Sprite(aiFlashMat); fl.scale.setScalar(2.2); fl.visible=false; fl.raycast=()=>{}; muzzle.add(fl);
   // marker
   const mk=new THREE.Sprite(new THREE.SpriteMaterial({map:team==='enemy'?mkEnemy:mkAlly,transparent:true,depthTest:false,fog:false}));
   mk.scale.set(1.3,1.3,1); mk.position.y=4.2; mk.renderOrder=999; mk.visible=!isPlayer; root.add(mk);
   const tk={type,T,team,isPlayer,root,hull,tur,gun,muzzle,flash:fl,marker:mk,pos:root.position,heading:0,speed:0,vel:new V3(),turYaw:0,gunPitch:0,
-    hp:100,dead:false,reloadT:Math.random()*2,lastHurt:99,flashT:0,
+    hp:100,dead:false,reloadT:Math.random()*2,lastHurt:99,flashT:0,barrelParts,noBarrel:false,onFire:false,hits:0,smokeT:0,
     ai:{state:'advance',target:null,thinkT:Math.random()*0.5,goal:null,holdT:0,stuckT:0,revT:0,seen:false}};
   root.traverse(o=>o.userData.tank=tk);
   return tk;
 }
 const fwdOf=h=>new V3(-Math.sin(h),0,-Math.cos(h));
 function tankCollide(tk,dx,dz){
-  const R=2.1;
+  const R=2.1; let knocked=null;
   for(const ax of ['x','z']){
     const d=ax==='x'?dx:dz; tk.pos[ax]+=d;
     for(const b of colliders){
+      if(b.prop){ // trees, poles, fences, hedgehogs, sandbags: the tank just goes through and flattens them
+        if(!b.prop.fallen && Math.abs(tk.speed)>0.3 && tk.pos.x+1.9>b.min.x && tk.pos.x-1.9<b.max.x && tk.pos.z+1.9>b.min.z && tk.pos.z-1.9<b.max.z){ knockProp(b.prop,tk); (knocked||(knocked=[])).push(b); }
+        continue; }
       if(b.max.y<1.25 || b.noBullet) continue;
       if(tk.pos.x+R>b.min.x && tk.pos.x-R<b.max.x && tk.pos.z+R>b.min.z && tk.pos.z-R<b.max.z){
         if(d>0) tk.pos[ax]=b.min[ax]-R; else if(d<0) tk.pos[ax]=b.max[ax]+R; tk.speed*=0.5;
       }
     }
   }
+  if(knocked){ for(const b of knocked){ const i=colliders.indexOf(b); if(i>=0) colliders.splice(i,1); } visCols=null; tk.speed*=0.85; }
   for(const o of tanks){ if(o===tk) continue; const ox=tk.pos.x-o.pos.x, oz=tk.pos.z-o.pos.z, dd=Math.hypot(ox,oz);
     if(dd<4.6 && dd>0.01){ const push=(4.6-dd)*0.5; tk.pos.x+=ox/dd*push; tk.pos.z+=oz/dd*push; if(!o.dead){ o.pos.x-=ox/dd*push*0.5; o.pos.z-=oz/dd*push*0.5; } } }
 }
@@ -2537,11 +2745,12 @@ function aimTankAt(tk,pt,dt){
 const SHELL_SPEED=240, SHELL_G=5;
 const shellMat=new THREE.SpriteMaterial({map:flashTexAI(),color:0xffd090,blending:THREE.AdditiveBlending,transparent:true,depthWrite:false});
 function fireShell(tk){
-  if(tk.reloadT>0 || tk.dead) return false;
+  if(tk.reloadT>0 || tk.dead || tk.noBarrel) return false;
   tk.reloadT=tk.T.reload*(tk.isPlayer?1:1.25);
   const m=new V3(); tk.muzzle.getWorldPosition(m);
   const dir=new V3(0,0,-1).applyQuaternion(tk.gun.getWorldQuaternion(new THREE.Quaternion())).normalize();
-  if(!tk.isPlayer){ const sp=0.005+ (tk.speed>1?0.01:0); dir.x+=(Math.random()-.5)*sp; dir.y+=(Math.random()-.5)*sp*0.6; dir.z+=(Math.random()-.5)*sp; dir.normalize(); }
+  const sp=(tk.isPlayer?0:0.005+(tk.speed>1?0.01:0)) + (tk.onFire?(tk.isPlayer?0.03:0.08):0);   // burning crews can barely aim
+  if(sp>0){ dir.x+=(Math.random()-.5)*sp; dir.y+=(Math.random()-.5)*sp*0.6; dir.z+=(Math.random()-.5)*sp; dir.normalize(); }
   const spr=new THREE.Sprite(shellMat); spr.scale.setScalar(0.7); spr.position.copy(m); scene.add(spr);
   shells.push({pos:m.clone(),vel:dir.multiplyScalar(SHELL_SPEED),owner:tk,spr,life:3});
   tk.flash.visible=true; tk.flashT=0.08;
@@ -2556,7 +2765,8 @@ function tankBoxes(tk){
   const [W,H,L]=tk.T.hull, [tw,th,tl]=tk.T.tur;
   return [
     {part:'hull',obj:tk.hull,box:new THREE.Box3(new V3(-W/2,0.05,-L/2),new V3(W/2,1.7,L/2))},
-    {part:'tur', obj:tk.tur, box:new THREE.Box3(new V3(-tw/2,0,-tl/2),new V3(tw/2,th+0.1,tl/2))}
+    {part:'tur', obj:tk.tur, box:new THREE.Box3(new V3(-tw/2,0,-tl/2),new V3(tw/2,th+0.1,tl/2))},
+    ...(tk.noBarrel?[]:[{part:'barrel', obj:tk.gun, box:new THREE.Box3(new V3(-0.2,-0.2,-tk.T.barrel-0.45),new V3(0.2,0.2,-0.45))}])
   ];
 }
 // first tank hit along a segment
@@ -2587,34 +2797,67 @@ function traceEnv(o,dir,len){
   return best;
 }
 function faceOf(n){ if(n.y>0.5||n.y<-0.5) return 'top'; if(Math.abs(n.z)>Math.abs(n.x)) return n.z<0?'front':'rear'; return 'side'; }
+// the turret ring: the joint where the turret sits on the hull
+function ringHit(hit){
+  const T=hit.tk.T, [tw,th,tl]=T.tur, p=hit.local;
+  if(hit.part==='tur') return p.y<0.32;                                   // bottom edge of the turret
+  return p.y>1.22 && Math.abs(p.z-T.turZ)<tl/2+0.35;   // top strip of the hull right under the turret (from the side, front of turret or deck)
+}
 // armour & angles
 function resolveArmour(hit,pen,shooter,isMG){
-  const tk=hit.tk, face=faceOf(hit.n), A=tk.T.armour[hit.part==='tur'?'tur':'hull'][face];
-  const cos=Math.max(0.05,Math.abs(hit.ldir.dot(hit.n)));
-  const eff=A/cos;
-  const byPlayer=shooter && shooter.isPlayer, onPlayer=tk.isPlayer;
-  if(isMG){
-    if(eff<25){ damageTank(tk,2,shooter,false); if(byPlayer) hitTimer=0.08; }
-    spawnPuff(hit.point,0xffd080,0.4,0.15,true,0); return;
-  }
-  if(cos<0.34 && face!=='top'){ // ricochet
-    tone(1400,700,0.12,0.25*Math.min(1,20/(hit.point.distanceTo(camera.position)+5)),'triangle');
-    spawnPuff(hit.point,0xffe0a0,1.2,0.2,true,0);
-    if(byPlayer) showMsg('RICOCHET!',0.9); if(onPlayer) showMsg('BOUNCED! (good angle)',0.9);
+  // every shell hits home now: no ricochets, no "didn't penetrate". 3 hits kill, a turret-ring hit kills at once,
+  // the first hit sets the tank on fire (it can still fight but shoots wildly), and a hit on the barrel snaps it off.
+  const tk=hit.tk, byPlayer=shooter && shooter.isPlayer, onPlayer=tk.isPlayer;
+  if(isMG){ spawnPuff(hit.point,0xffd080,0.4,0.15,true,0); return; }        // machine guns just spark off armour
+  if(protectT>0 || tk.dead) return;
+  if(hit.part==='barrel'){
+    breakBarrel(tk,shooter);
+    spawnPuff(hit.point,0xffe0a0,1.6,0.25,true,0); tone(900,300,0.25,0.3,'square');
+    if(byPlayer){ hitTimer=0.2; showMsg('BARREL SHOT OFF! THAT TANK CAN\'T FIRE ITS GUN!',1.6); }
+    if(onPlayer) showMsg('OUR GUN BARREL IS GONE! USE THE MACHINE GUN (SPACE) AND GET OUT OF HERE!',3);
     return;
   }
-  if(pen<eff){
-    spawnPuff(hit.point,0xffe0a0,1.4,0.25,true,0); tone(500,300,0.15,0.3,'square');
-    damageTank(tk,4,shooter,false);
-    if(byPlayer) showMsg(`NO PENETRATION (${Math.round(eff)}mm ${face} armour)`,1.1); if(onPlayer) showMsg('SHELL DIDN\'T GET THROUGH!',0.9);
-    return;
-  }
-  let dmg=30+Math.random()*14; if(face==='rear') dmg*=1.45; else if(face==='side') dmg*=1.15;
-  const crit=Math.random()<0.12;
+  const crit=ringHit(hit);
+  tk.hits++;
   spawnPuff(hit.point,0xffa040,2.2,0.35,true,0); spawnPuff(hit.point,0x333333,2.2,1.4,false,0.6);
-  if(byPlayer){ hitTimer=0.2; showMsg(crit?'AMMO RACK HIT!':`PENETRATION! (${face.toUpperCase()}${hit.part==='tur'?' TURRET':''})`,1.1); }
-  if(onPlayer) showMsg(crit?'CRITICAL HIT!':'WE\'RE HIT!',1);
-  damageTank(tk,crit?150:dmg,shooter,crit);
+  if(!tk.onFire) setTankOnFire(tk);
+  if(byPlayer){ hitTimer=0.2; showMsg(crit?'TURRET RING HIT! AMMO RACK!':tk.hits>=3?'THIRD HIT!':`HIT ${tk.hits}/3 · IT'S ON FIRE`,1.1); }
+  if(onPlayer) showMsg(crit?'CRITICAL HIT!':tk.hits===1?'WE\'RE HIT! WE\'RE ON FIRE! (AIM IS SHAKY)':`WE'RE HIT AGAIN! (${tk.hits}/3)`,1.6);
+  damageTank(tk,crit?150:34,shooter,crit);
+}
+const tankFlameMat=new THREE.SpriteMaterial({map:smokeTex,color:0xff7a20,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending});
+function setTankOnFire(tk){
+  tk.onFire=true; tk.flames=[];
+  const L=tk.T.hull[2];
+  for(let i=0;i<3;i++){ const f=new THREE.Sprite(tankFlameMat); f.position.set((i-1)*0.5,1.7,L/2-1.0); f.raycast=()=>{}; tk.hull.add(f); tk.flames.push(f); }
+}
+function updateTankFire(tk,dt,t){
+  if(!tk.onFire || !tk.flames) return;
+  tk.flames.forEach((f,i)=>{ const k=0.7+0.3*Math.sin(t*13+i*2)+0.15*Math.sin(t*29+i); f.scale.set(0.9*k,1.5*k,1); f.position.y=1.6+0.25*k; });
+  tk.smokeT-=dt; if(tk.smokeT<=0){ tk.smokeT=0.14; const p=tk.pos.clone().addScaledVector(fwdOf(tk.heading),-tk.T.hull[2]/2+1).add(new V3((Math.random()-.5)*0.8,2.2,(Math.random()-.5)*0.8)); spawnPuff(p,0x2a2826,2.2,2.2,false,1.6); }
+}
+const debris=[];
+function breakBarrel(tk,shooter){
+  if(tk.noBarrel) return; tk.noBarrel=true;
+  tk.root.updateMatrixWorld(true);
+  const v=tk.vel.clone();
+  for(const m of tk.barrelParts){
+    const wp=new V3(), wq=new THREE.Quaternion(); m.getWorldPosition(wp); m.getWorldQuaternion(wq);
+    m.parent.remove(m); m.position.copy(wp); m.quaternion.copy(wq); scene.add(m);
+    debris.push({m,vel:v.clone().add(new V3((Math.random()-.5)*2.5,2.5+Math.random()*1.5,(Math.random()-.5)*2.5)),spin:new V3((Math.random()-.5)*4,(Math.random()-.5)*2,(Math.random()-.5)*4),rest:false,r:m.geometry.parameters.radiusBottom||0.1});
+  }
+  if(tk.ai && !tk.isPlayer) tk.ai.goal=null;
+}
+const _dq=new THREE.Quaternion(), _de=new THREE.Euler();
+function updateDebris(dt){
+  for(const d of debris){ if(d.rest) continue;
+    d.vel.y-=9.8*dt; d.m.position.addScaledVector(d.vel,dt);
+    _dq.setFromEuler(_de.set(d.spin.x*dt,d.spin.y*dt,d.spin.z*dt)); d.m.quaternion.multiply(_dq);
+    if(d.m.position.y<=d.r+0.02){ // hits the ground: lie flat along its length
+      const axis=new V3(0,1,0).applyQuaternion(d.m.quaternion); axis.y=0; if(axis.lengthSq()<1e-4) axis.set(1,0,0); axis.normalize();
+      d.m.quaternion.setFromUnitVectors(new V3(0,1,0),axis); d.m.position.y=d.r+0.02; d.rest=true;
+      spawnPuff(d.m.position.clone(),mapSnow?0xffffff:0x8a7a5a,1.2,0.8,false,0.3); tone(220,120,0.15,0.2*Math.min(1,15/(d.m.position.distanceTo(camera.position)+3)),'square'); }
+  }
 }
 function damageTank(tk,dmg,shooter,crit){
   if(tk.dead || protectT>0) return;
@@ -2895,6 +3138,7 @@ function clearTanks(){
   for(const f of tankExtras.fires){ for(const sp of [...f.smoke,...f.flames]) mapRoot.remove(sp); if(f.light) mapRoot.remove(f.light); const i=fires.indexOf(f); if(i>=0) fires.splice(i,1); }
   tankExtras={cols:[],fires:[]}; visCols=null;
   for(const s of shells) scene.remove(s.spr); shells=[];
+  for(const d of debris) scene.remove(d.m); debris.length=0;
   tankWreckFires=0;
 }
 function setupTankBattle(){
@@ -2924,7 +3168,9 @@ function startEngine(){
 function stopEngine(){ if(!engine) return; try{ engine.o.stop(); engine.o2.stop(); }catch(e){} engine=null; }
 
 // ---------- player tank ----------
-function tankFireCannon(){ if(state!=='playing' || !ptank || ptank.dead) return; if(!fireShell(ptank) && ptank.reloadT>0) sndClick(0,700,0.2); }
+function tankFireCannon(){ if(state!=='playing' || !ptank || ptank.dead) return;
+  if(ptank.noBarrel){ sndClick(0,500,0.25); showMsg('NO BARREL! USE THE MACHINE GUN (SPACE)',1.2); return; }
+  if(!fireShell(ptank) && ptank.reloadT>0) sndClick(0,700,0.2); }
 function updateTankPlayer(dt){
   const tk=ptank; if(!tk) return;
   let f=(keys.KeyW?1:0)-(keys.KeyS?1:0), s=(keys.KeyD?1:0)-(keys.KeyA?1:0);
@@ -2975,8 +3221,8 @@ function updateTankPlayer(dt){
   // HUD
   $('hpbar').style.width=Math.max(0,tk.hp)+'%'; $('hpbar').style.background=tk.hp>50?'#cfd8b8':tk.hp>25?'#e0b050':'#d0603c';
   const rk=1-tk.reloadT/tk.T.reload; $('stam').style.width=(rk*100)+'%'; $('stam').style.background=rk>=1?'#9be38f':'#d8d0b8';
-  $('ammoN').textContent = tk.reloadT>0 ? `RELOADING ${tk.reloadT.toFixed(1)}s` : 'CANNON READY';
-  $('ammoW').textContent = `${tk.T.name} · MG ${mgLock?'OVERHEATED':Math.round(mgHeat*100)+'% heat'}`;
+  $('ammoN').textContent = tk.noBarrel ? 'NO BARREL' : tk.reloadT>0 ? `RELOADING ${tk.reloadT.toFixed(1)}s` : 'CANNON READY';
+  $('ammoW').textContent = `${tk.T.name} · HITS ${tk.hits}/3${tk.onFire?' · ON FIRE':''} · MG ${mgLock?'OVERHEATED':Math.round(mgHeat*100)+'% heat'}`;
   $('reloadTxt').style.opacity=0;
   $('cross').style.opacity=sight?0:0.9; updateCrosshair(6,sight?0:0.9);
 }
@@ -3006,7 +3252,8 @@ function updateTankAI(tk,dt){
     // aim with lead, fire when lined up
     const lead=t.pos.clone().addScaledVector(t.vel,d/SHELL_SPEED).add(new V3(0,1.2,0));
     const err=aimTankAt(tk,lead,dt);
-    if(ai.seen && err<0.05 && tk.reloadT<=0 && protectT<=0) fireShell(tk);
+    if(ai.seen && err<(tk.onFire?0.12:0.05) && tk.reloadT<=0 && protectT<=0) fireShell(tk);
+    if(tk.noBarrel){ const away=tk.pos.clone().sub(t.pos).setY(0).normalize(); goal=tk.pos.clone().addScaledVector(away,30); goal.x=Math.max(-62,Math.min(62,goal.x)); goal.z=Math.max(-62,Math.min(62,goal.z)); }
   } else {
     aimTankAt(tk,tk.pos.clone().addScaledVector(fwdOf(tk.heading),40).add(new V3(0,1.5,0)),dt);
     if(tk.team==='enemy') goal = TCFG().hunt && ptank ? ptank.pos.clone() : new V3((tk.pos.x*0.7),0,26);
@@ -3024,6 +3271,7 @@ function updateTankAI(tk,dt){
   }
   driveTank(tk,thr,steer,dt);
   tankAIMG(tk,dt);
+  updateTankFire(tk,dt,performance.now()/1000);
   if(tk.flashT>0){ tk.flashT-=dt; if(tk.flashT<=0) tk.flash.visible=false; }
   // enemy markers only when you can see them (or they're close)
   if(tk.team==='enemy' && ptank) tk.marker.visible = ai.seenByPlayer || tk.pos.distanceTo(ptank.pos)<60;
@@ -3037,6 +3285,8 @@ function updateTankBattle(dt,t){
   if(ptank && Math.random()<0.15){ const eye=ptank.pos.clone().add(new V3(0,2.6,0)); for(const tk of tanks) if(tk.team==='enemy' && !tk.dead) tk.ai.seenByPlayer=tk.pos.distanceTo(ptank.pos)<170 && lineOfSight(eye,tk.pos.clone().add(new V3(0,1.6,0))); }
   for(const tk of tanks){ if(tk.dead || tk.isPlayer) continue; updateTankAI(tk,dt); }
   if(ptank && ptank.flashT>0){ ptank.flashT-=dt; if(ptank.flashT<=0) ptank.flash.visible=false; }
+  if(ptank && !ptank.dead) updateTankFire(ptank,dt,t);
+  updateDebris(dt);
   updateShells(dt);
   for(let i=tracers.length-1;i>=0;i--){ tracers[i].t-=dt; if(tracers[i].t<=0){ scene.remove(tracers[i].ln); tracers[i].ln.geometry.dispose(); tracers.splice(i,1); } }
   // reinforcements + victory
@@ -3054,7 +3304,7 @@ function updateTankBattle(dt,t){
   if(mapDoneT>0){ mapDoneT-=dt; if(mapDoneT<=0) showDebrief(); }
   updateInfantry(dt,t);
   // repairs: your tank and allies fix themselves after 6 s without being hit
-  for(const tk of tanks){ if(tk.dead || tk.team!=='ally') continue; tk.lastHurt+=dt; if(tk.lastHurt>6 && tk.hp<100) tk.hp=Math.min(100,tk.hp+6*dt); }
+  for(const tk of tanks){ if(!tk.dead) tk.lastHurt+=dt; }
   // music + HUD
   let fight=0; for(const tk of tanks) if(tk.team==='enemy' && !tk.dead && tk.ai.target) fight++;
   musicSetIntensity(playerDead?0:Math.min(1,fight/2+(ptank&&ptank.lastHurt<5?0.4:0))); musicUpdate(dt);
@@ -3118,7 +3368,7 @@ const gun={type:'ppsh',ammo:0,reserve:0,cooldown:0,reloading:0,bolt:0,ads:0,kick
 
 /* ================= FIRST-PERSON VIEWMODEL ================= */
 const vmRoot=new THREE.Group(); viewScene.add(vmRoot);
-let vmWeapon=null, vmFlash=null;
+let vmWeapon=null, vmFlash=null, vmLeft=null, vmClip=null;
 const flashTex=canvasTex(64,(x,s)=>{
   const g=x.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);
   g.addColorStop(0,'rgba(255,250,220,1)'); g.addColorStop(0.3,'rgba(255,190,80,.9)'); g.addColorStop(1,'rgba(255,120,0,0)');
@@ -3131,12 +3381,17 @@ function buildViewmodel(side,type){
   const sleeve=mat(S.uniform), skin=mat(0xd6a782,{roughness:.8});
   const f=vmWeapon.userData.fore;
   const rh=new V3(0,-0.045,0.03), lh=f.clone();
+  vmLeft=new THREE.Group(); vmWeapon.add(vmLeft);          // the left arm moves on its own while reloading
   for(const [h,end] of [[rh,new V3(0.16,-0.3,0.62)],[lh,new V3(-0.18,-0.28,lh.z+0.6)]]){
-    const start=h.clone().lerp(end,0.16);
+    const start=h.clone().lerp(end,0.16), parent = h===lh ? vmLeft : vmWeapon;
     const sl=rbox(0.095,0.095,start.distanceTo(end),sleeve,0.015,false);
-    sl.position.copy(start).add(end).multiplyScalar(.5); sl.lookAt(end); vmWeapon.add(sl);
-    const hand=rbox(0.085,0.085,0.1,skin,0.02,false); hand.position.copy(h); hand.lookAt(end); vmWeapon.add(hand);
+    sl.position.copy(start).add(end).multiplyScalar(.5); sl.lookAt(end); parent.add(sl);
+    const hand=rbox(0.085,0.085,0.1,skin,0.02,false); hand.position.copy(h); hand.lookAt(end); parent.add(hand);
   }
+  // stripper clip for the bolt-action rifles
+  vmClip=new THREE.Group(); vmClip.visible=false; vmWeapon.add(vmClip);
+  { const brass=mat(0xb8913a,{roughness:.4,metalness:.7}); for(let i=0;i<5;i++){ const r=cyl(0.006,0.006,0.06,brass,6); r.position.set(0,0.03,-0.02+i*0.011); vmClip.add(r); }
+    const strip=box(0.012,0.008,0.065,mat(0x6a6a62,{metalness:.6})); strip.position.y=0.002; vmClip.add(strip); }
   const fm=new THREE.MeshBasicMaterial({map:flashTex,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
   vmFlash=new THREE.Group();
   const p1=new THREE.Mesh(new THREE.PlaneGeometry(0.22,0.22),fm);
@@ -3192,7 +3447,19 @@ function gunshot(dur,decay,f0,f1,thump,thumpF){
       ph+=2*Math.PI*(thumpF*Math.exp(-t*12)+35)/sr;
       d[i]=(y2*1.6+crack)*Math.exp(-t*decay) + Math.sin(ph)*thump*Math.exp(-t*22); } });
 }
+// short metallic clicks/clacks for reloading: noise burst + a ringing tone
+function metal(dur,ring,decay,nAmt=1,thud=0){
+  return synth(dur,(d,sr,n)=>{ let y=0; for(let i=0;i<n;i++){ const t=i/sr, x=Math.random()*2-1; y+=0.35*(x-y);
+    d[i]=(x-y)*nAmt*Math.exp(-t*decay*1.6) + Math.sin(2*Math.PI*ring*t)*0.55*Math.exp(-t*decay) + Math.sin(2*Math.PI*ring*1.47*t)*0.25*Math.exp(-t*decay*1.3) + Math.sin(2*Math.PI*90*t)*thud*Math.exp(-t*30); } });
+}
+function buildReloadSounds(){
+  SB.magOut=metal(0.16,1700,45,0.9); SB.magIn=metal(0.2,1250,38,1.1,0.6); SB.charge=metal(0.22,2300,30,0.8);
+  SB.boltUp=metal(0.09,2900,70,0.6); SB.boltBack=metal(0.18,1900,32,0.7); SB.boltFwd=metal(0.18,1500,34,0.9,0.4);
+  SB.clipIn=synth(0.32,(d,sr,n)=>{ for(let i=0;i<n;i++){ const t=i/sr; let v=0; for(let k=0;k<5;k++){ const tk=0.02+k*0.055; if(t>tk) v+=Math.sin(2*Math.PI*(2600+k*120)*(t-tk))*Math.exp(-(t-tk)*90)*(Math.random()*0.6+0.7); } d[i]=v; } });
+  SB.panOff=metal(0.25,800,24,1.0,0.5); SB.panOn=metal(0.28,950,22,1.1,0.8);
+}
 function buildSounds(){
+  buildReloadSounds();
   SB.rifle=gunshot(0.6,7,3200,260,0.9,120);
   SB.smg=gunshot(0.28,16,4200,320,0.6,170);
   SB.click=synth(0.045,(d,sr,n)=>{ let y=0; for(let i=0;i<n;i++){ const t=i/sr,x=Math.random()*2-1; y+=0.5*(x-y); d[i]=(x-y)*Math.exp(-t*110); } });
@@ -3507,14 +3774,16 @@ function fire(){
   const r=W.recoil*(1-gun.ads*0.5)*(player.crouch?0.7:1);
   player.pitch+=r; player.recoilAcc+=r; player.yaw+=(Math.random()-.5)*r*0.5;
   gun.kick=1; gun.flash=0.05; sndShot(W.heavy); alertByGunshot(player.pos);
-  if(W.bolt){ sndClick(0.4,1600,0.25); sndClick(0.7,1900,0.25); }
+  if(W.bolt){ play(SB.boltUp,0.4,1,W.rate*0.15); play(SB.boltBack,0.45,1,W.rate*0.3); play(SB.boltFwd,0.45,1,W.rate*0.5); play(SB.boltUp,0.3,0.8,W.rate*0.62); }
   // bullet
   const hs=Math.hypot(player.vel.x,player.vel.z);
   const spread=W.spread*(1-gun.ads*0.75)*(1+hs*0.15)*(player.crouch?0.7:1)*(player.onGround?1:3);
   ray.setFromCamera(new THREE.Vector2((Math.random()-.5)*spread*2,(Math.random()-.5)*spread*2),camera);
   const tr=bulletTrace(ray.ray.origin.clone(),ray.ray.direction.clone(),200,null);
   const s=tr.soldier;
-  if(s){
+  if(isDuel()){ const end=tr.point?tr.point:ray.ray.origin.clone().addScaledVector(ray.ray.direction,200); duelSend({t:'fire',e:arr(end),w:W.heavy?1:0}); }
+  if(s && s.remote){ duelSend({t:'hit',d:pvpDamage(W,tr.head),h:tr.head?1:0}); hitTimer=0.15; $('hit').classList.toggle('kill',false); if(tr.head) showMsg('HEADSHOT!',0.6); }
+  else if(s){
     if(mates.includes(s)){ showMsg('HOLD YOUR FIRE! FRIENDLY!'); s.flinch=1; s.flinchDir=Math.random()<.5?-1:1; }
     else {
       const dmg=(W.dmg ?? (W.bolt?100:50))*(tr.head?2:1);
@@ -3528,8 +3797,45 @@ function fire(){
 function startReload(){
   const W=WEAPONS[gun.type];
   if(gun.reloading>0 || gun.ammo>=W.mag || gun.reserve<=0) return;
-  gun.reloading=W.reload; gun.bolt=0;
-  sndClick(0.35,1200,0.25); sndClick(W.reload*0.6,1500,0.25); sndClick(W.reload-0.25,2100,0.3);
+  gun.reloading=W.reload; gun.bolt=0; gun.rlEv=0;
+}
+// reload choreography per kind of feed: [time 0-1, sound]
+const RELOAD_EVENTS={
+  mag:  [[0.12,'magOut'],[0.62,'magIn'],[0.82,'charge']],
+  pan:  [[0.1,'panOff'],[0.6,'panOn'],[0.85,'charge']],
+  drum: [[0.08,'boltBack'],[0.22,'panOff'],[0.6,'panOn'],[0.86,'charge']],
+  clip: [[0.08,'boltUp'],[0.16,'boltBack'],[0.4,'clipIn'],[0.82,'boltFwd'],[0.9,'boltUp']]
+};
+const smooth=(a,b,x)=>{ const k=Math.max(0,Math.min(1,(x-a)/(b-a))); return k*k*(3-2*k); };
+function animateReload(W){
+  const U=vmWeapon.userData, mag=U.mag, bolt=U.boltH, fore=U.fore;
+  // reset to rest first
+  if(mag){ mag.position.copy(U.magPos); mag.rotation.copy(U.magRot); mag.visible=true; }
+  if(bolt){ bolt.rotation.set(0,0,0); bolt.position.z=0.03; }
+  vmLeft.position.set(0,0,0); vmClip.visible=false;
+  if(gun.reloading>0){
+    const p=1-gun.reloading/W.reload, ev=RELOAD_EVENTS[U.rl]||RELOAD_EVENTS.mag;
+    while(gun.rlEv<ev.length && p>=ev[gun.rlEv][0]){ play(SB[ev[gun.rlEv][1]],0.6); gun.rlEv++; }
+    if(U.rl==='clip'){
+      const up=smooth(0.08,0.14,p)-smooth(0.86,0.92,p), back=smooth(0.14,0.22,p)-smooth(0.78,0.84,p);
+      bolt.rotation.z=1.3*up; bolt.position.z=0.03+0.09*back;
+      const c=smooth(0.24,0.3,p)*(1-smooth(0.6,0.64,p)); vmClip.visible=c>0.01;
+      vmClip.position.set(0,0.09-0.05*smooth(0.3,0.58,p),0.0);
+      const k=smooth(0.12,0.26,p)*(1-smooth(0.7,0.8,p));
+      vmLeft.position.set(-fore.x*k,(0.12-fore.y)*k,(0.02-fore.z)*k);
+    } else if(mag){
+      const out=smooth(0.12,0.3,p), inn=smooth(0.48,0.64,p), gone=p>0.31 && p<0.47;
+      const dir = U.rl==='pan' ? new V3(0,1,0) : U.rl==='drum' ? new V3(1,0,0) : new V3(0,-1,0);
+      const off=0.32*(p<0.4?out:(1-inn));
+      mag.position.copy(U.magPos).addScaledVector(dir,off); mag.rotation.z=U.magRot.z+(U.rl==='mag'?0.35*off:0); mag.visible=!gone;
+      const k=smooth(0.06,0.14,p)*(1-smooth(0.68,0.78,p));
+      vmLeft.position.set((U.magPos.x-fore.x)*k+dir.x*off,(U.magPos.y-fore.y)*k+dir.y*off,(U.magPos.z-fore.z)*k);
+      if(p>0.8 && p<0.9) vmLeft.position.z+=0.04*Math.sin((p-0.8)/0.1*Math.PI);
+    }
+  } else if(bolt && gun.bolt>0){ // working the bolt between shots
+    const q=1-gun.bolt/W.rate, up=smooth(0.12,0.22,q)-smooth(0.55,0.65,q), back=smooth(0.22,0.35,q)-smooth(0.42,0.55,q);
+    bolt.rotation.z=1.3*up; bolt.position.z=0.03+0.09*back;
+  }
 }
 
 /* ================= CAMPAIGN: missions, story, unlocks ================= */
@@ -3558,7 +3864,7 @@ const STORY={
    brief:[`Comrade, listen well. The Germans hold most of the city now. We are pressed against the Volga with the river at our backs, and every boat that crosses brings fresh men into the fire.`,
           `Order No. 227 is clear: not one step back. Your section holds the ruins on Lenin Street. The enemy is massing in the blocks to the north to push us into the river.`,
           `Use the rubble. Fight from building to building, close enough that their artillery and aircraft cannot help them. Keep your men alive and keep your head down.`],
-   obj:'Defeat 50 German soldiers attacking along the street. You have 14 comrades with you.',
+   obj:'Defeat 50 German soldiers attacking along the street, together with your squad.',
    debrief:[`You held Lenin Street. Across the city, sections like yours held on by their fingernails.`,
             `On 19 November our armies attacked the weak Romanian flanks north and south of the city. Four days later the ring closed. The German 6th Army, the hunters, are now trapped in the ruins they came to take.`,
             `In February 1943 they surrender. The tide of the war in the East has turned.`]},
@@ -3575,9 +3881,9 @@ const STORY={
    from:'Lieutenant Colonel A. Gromov · 8th Guards Army',
    brief:[`The assault on the Heights began before dawn: the heaviest barrage of the war, then our searchlights turned on to blind the enemy. The light reflected off the smoke and blinded us instead.`,
           `Your section is one of the few that reached the German trenches on the crest. The rest of the battalion is pinned in the flooded meadows below.`,
-          `Now the Germans are throwing everything they have left at you to win the ridge back: panzergrenadiers, police, boys of the Volkssturm. There are only fifteen of you. Hold the captured trench until the second wave fights its way up. You are badly outnumbered. Use the trench, the bunkers and every grenade.`],
-   obj:'Defeat 100 counter-attacking German soldiers. Only 15 of you hold the crest.',
-   debrief:[`Somehow, the fifteen of you held. By evening the second wave reached the crest.`,
+          `Now the Germans are throwing everything they have left at you to win the ridge back: panzergrenadiers, police, boys of the Volkssturm. There are only a handful of you. Hold the captured trench until the second wave fights its way up. You are badly outnumbered. Use the trench, the bunkers and every grenade.`],
+   obj:'Defeat 100 counter-attacking German soldiers. Only your squad holds the crest.',
+   debrief:[`Somehow, your squad held. By evening the second wave reached the crest.`,
             `The Heights fall on 19 April. Tens of thousands of Soviet soldiers died on these slopes in four days.`,
             `Beyond the ridge, the road to Berlin is open. Eleven days later you will be standing in front of the Reichstag.`]},
   berlin:{date:'30 April 1945',place:'Berlin, the Königsplatz',title:'The Victory Banner',
@@ -3605,7 +3911,7 @@ const STORY={
    brief:[`We were told the city would fall in weeks. It has been three months. The Russians cling to every ruin along the river, and we pay for every house in blood.`,
           `Our orders: take the street block in front of us and push through to the Volga. Command says one more push will finish it. Command has said that before.`,
           `Watch the windows and the rubble. They fight up close, at night, from the cellars. Stay with your squad. Nobody is coming to get you out if you are cut off.`],
-   obj:'Defeat 50 Soviet soldiers defending the street. You have 14 comrades with you.',
+   obj:'Defeat 50 Soviet soldiers defending the street, together with your squad.',
    debrief:[`We took the street. It changes nothing.`,
             `On 19 November the Soviets break through our flanks, and within four days the whole 6th Army is surrounded. Your squad is flown out with the wounded on one of the last planes before the ring tightens.`,
             `Of the 91,000 who surrender in February 1943, only about 6,000 will ever see home again.`]},
@@ -3623,7 +3929,7 @@ const STORY={
    brief:[`At three this morning the sky in the east turned white. Thousands of guns, then searchlights shining up at the Heights. The Soviet offensive on Berlin has begun.`,
           `This ridge is the last real line between the Oder and the capital. The division is stretched far too thin. Your squad holds a section of trench alone, with the nearest friends hundreds of metres away.`,
           `They will come up the slope in wave after wave. There may be hundreds of them for every one of us. Stay low, keep moving between the trench and the bunkers, and do not let them into the line.`],
-   obj:'Defeat 100 Soviet soldiers assaulting the ridge. Only 15 of you hold this section.',
+   obj:'Defeat 100 Soviet soldiers assaulting the ridge. Only your squad holds this section.',
    debrief:[`Your section held until dark. All around you, the line did not.`,
             `On 19 April the Soviets break through and the Heights fall. What is left of the 9th Army is encircled south of Berlin.`,
             `You fall back with your squad into the city, towards the Reichstag. The end is two weeks away.`]},
@@ -3639,14 +3945,14 @@ const STORY={
  }
 };
 const MISSION_INFO={
-  stalingrad:{n:'I',mode:'On foot · 15 vs 50',color:'#c9d3dc'},
+  stalingrad:{n:'I',mode:'On foot · your squad vs 50',color:'#c9d3dc'},
   moscow:{n:'II',mode:'4 vs 4 tank battle, then on foot · hold until relief',color:'#c9d3dc'},
   kursk:{n:'III',mode:'Tank battle · 20 vs 20 + infantry',color:'#d8c98a'},
-  seelow:{n:'IV',mode:'On foot · 15 vs 100 · badly outnumbered',color:'#a9b4c6'},
+  seelow:{n:'IV',mode:'On foot · your squad vs 100 · badly outnumbered',color:'#a9b4c6'},
   berlin:{n:'V',mode:'On foot · storm / hold the Reichstag',color:'#d09a7a'}
 };
 let briefMission='stalingrad';
-function hideMenus(){ for(const id of ['menu','missions','briefing','debrief']) $(id).style.display='none'; }
+function hideMenus(){ for(const id of ['menu','missions','briefing','debrief','duelMenu','duelOver']) $(id).style.display='none'; }
 function previewMap(id){
   moscowPhase=1;
   if(currentMap!==id){ leaveTankMode(); clearSoldiers(); buildMap(id); visCols=null; }
@@ -3682,7 +3988,13 @@ function showBriefing(id){
   $('bTank').style.display=mode==='infantry'?'none':'block';
   $('bTank').textContent = tank ? `Your tank: ${tankName} · WASD drive · mouse aims · click cannon · Space machine gun · Q gunner sight`
     : mode==='mixed' ? `Part 1 in your ${tankName} (WASD drive · mouse aims · click cannon · Space MG). Part 2 on foot with the weapon you pick below.` : '';
-  renderWeaponButtons();
+  renderWeaponButtons(); renderSquadPick(mode);
+}
+function renderSquadPick(mode){
+  const el=$('squadPick'); if(mode==='tank'){ el.innerHTML=''; return; }
+  el.innerHTML='<span style="opacity:.75;margin-right:8px">SQUAD:</span>'+SQUAD_OPTIONS.map(n=>`<button class="sq${n===SQUAD_MATES?' sel':''}" data-n="${n}">${n} teammates</button>`).join('')+
+    (SQUAD_MATES>=20?'<div style="font-size:11px;opacity:.6;margin-top:4px">20 teammates looks great but can lag on phones</div>':'');
+  el.querySelectorAll('button').forEach(b=>b.onclick=()=>{ SQUAD_MATES=+b.dataset.n; buildForm(SQUAD_MATES); try{ localStorage.setItem('ef_squad',SQUAD_MATES); }catch(e){} renderSquadPick(mode); spawnWorld(selSide,selWeapon,true); });
 }
 function showDebrief(){
   const id=currentMap, st=STORY[selSide][id];
@@ -3917,10 +4229,198 @@ let backPayNote={};
   if(changed) try{ localStorage.setItem(PROGRESS_KEY,JSON.stringify(p)); }catch(e){}
 })();
 
+/* ================= 1v1 ONLINE DUEL (peer-to-peer through the free PeerJS service) ================= */
+const DUEL_PREFIX='eastern-front-duel-v1-', DUEL_WIN=5;
+let duel=null, duelSide='soviet', duelWeapon='ppsh', remoteAv=null;
+const isDuel=()=>currentMap==='duel';
+function loadPeer(){
+  return new Promise((res,rej)=>{
+    if(window.Peer) return res(window.Peer);
+    const urls=['https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js','https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js']; let i=0;
+    const next=()=>{ if(i>=urls.length) return rej(new Error('no peerjs')); const sc=document.createElement('script'); sc.src=urls[i++];
+      sc.onload=()=>window.Peer?res(window.Peer):next(); sc.onerror=next; document.head.appendChild(sc); };
+    next();
+  });
+}
+function duelCode(){ const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c=''; for(let i=0;i<5;i++) c+=A[(Math.random()*A.length)|0]; return c; }
+const setDuelStatus=t=>{ $('duelStatus').innerHTML=t; };
+function showDuelMenu(){
+  hideMenus(); state='menu'; $('duelMenu').style.display='flex';
+  if(!weaponUnlocked(duelSide,duelWeapon)) duelWeapon=SIDES[duelSide].weapons[0];
+  renderDuelPick(); if(!duel) setDuelStatus('');
+}
+function renderDuelPick(){
+  $('duelSides').innerHTML=['soviet','german'].map(sd=>`<button class="sq${sd===duelSide?' sel':''}" data-s="${sd}">${SIDES[sd].title}</button>`).join('');
+  $('duelSides').querySelectorAll('button').forEach(b=>b.onclick=()=>{ duelSide=b.dataset.s; duelWeapon=SIDES[duelSide].weapons[0]; renderDuelPick(); });
+  const list=[...SIDES[duelSide].weapons,...UNLOCKS[duelSide].map(u=>u[0])].filter(w=>weaponUnlocked(duelSide,w));
+  $('duelWeapons').innerHTML=list.map(w=>`<button class="sq${w===duelWeapon?' sel':''}" data-w="${w}">${WEAPONS[w].name}</button>`).join('');
+  $('duelWeapons').querySelectorAll('button').forEach(b=>b.onclick=()=>{ duelWeapon=b.dataset.w; renderDuelPick(); });
+}
+function closeDuel(sendBye=true){
+  if(!duel) return;
+  if(sendBye) duelSend({t:'bye'});
+  try{ duel.conn && duel.conn.close(); }catch(e){} try{ duel.peer && duel.peer.destroy(); }catch(e){}
+  duel=null;
+  if(remoteAv){ scene.remove(remoteAv.root); const i=shootables.indexOf(remoteAv.root); if(i>=0) shootables.splice(i,1); remoteAv=null; }
+}
+function duelSend(m){ try{ if(duel && duel.conn && duel.conn.open) duel.conn.send(m); }catch(e){} }
+async function duelHost(){
+  initAudio(); closeDuel(false);
+  setDuelStatus('Connecting…');
+  let Peer; try{ Peer=await loadPeer(); }catch(e){ setDuelStatus('Could not load the online part. Check your internet connection and try again.'); return; }
+  const code=duelCode(), peer=new Peer(DUEL_PREFIX+code,{debug:0});
+  duel={peer,conn:null,host:true,code,score:[0,0],ready:{me:false,them:false}};
+  peer.on('open',()=>setDuelStatus(`Your room code:<div style="font-size:34px;letter-spacing:8px;margin:6px 0;color:#ffd23a">${code}</div>Send it to your friend, then wait here for them to join…`));
+  peer.on('connection',c=>{ if(duel.conn){ c.close(); return; } setupConn(c); });
+  peer.on('error',e=>setDuelStatus(e.type==='unavailable-id'?'That code was taken. Press HOST again.':'Connection problem ('+e.type+'). Try again.'));
+}
+async function duelJoin(){
+  initAudio();
+  const code=$('duelCode').value.trim().toUpperCase();
+  if(code.length<5){ setDuelStatus('Type the 5-letter code your friend got when they pressed HOST.'); return; }
+  closeDuel(false); setDuelStatus('Connecting…');
+  let Peer; try{ Peer=await loadPeer(); }catch(e){ setDuelStatus('Could not load the online part. Check your internet connection and try again.'); return; }
+  const peer=new Peer({debug:0});
+  duel={peer,conn:null,host:false,code,score:[0,0],ready:{me:false,them:false}};
+  peer.on('open',()=>{ setDuelStatus('Looking for your friend\'s game…'); setupConn(peer.connect(DUEL_PREFIX+code,{reliable:true})); });
+  peer.on('error',e=>setDuelStatus(e.type==='peer-unavailable'?'No game with that code. Check the code, and make sure your friend is still on the HOST screen.':'Connection problem ('+e.type+'). Try again.'));
+}
+function setupConn(c){
+  duel.conn=c;
+  c.on('open',()=>{ setDuelStatus('Connected! Starting the duel…'); duelSend({t:'hello',side:duelSide,weapon:duelWeapon}); });
+  c.on('data',onDuelData);
+  c.on('close',()=>duelLost('Your friend left the game.'));
+  c.on('error',()=>duelLost('The connection was lost.'));
+}
+function duelLost(msg){
+  if(!duel) return; closeDuel(false);
+  if(isDuel() && state!=='menu'){ showMsg(msg,4); setTimeout(()=>{ if(isDuel()) $('toMenu').onclick(); },2500); }
+  else setDuelStatus(msg);
+}
+function hostStart(){
+  const pick=a=>a[(Math.random()*a.length)|0];
+  duel.atmo={tod:pick(['dawn','day','day','dusk','night']),wx:pick(['clear','clear','precip','fog'])};
+  duelSend({t:'start',tod:duel.atmo.tod,wx:duel.atmo.wx}); startDuel();
+}
+const v3=a=>new V3(a[0],a[1],a[2]), arr=v=>[+v.x.toFixed(2),+v.y.toFixed(2),+v.z.toFixed(2)];
+function onDuelData(m){
+  if(!duel || !m) return;
+  switch(m.t){
+    case 'hello': duel.them={side:m.side,weapon:WEAPONS[m.weapon]?m.weapon:SIDES[m.side].weapons[0]}; if(duel.host) hostStart(); break;
+    case 'start': duel.atmo={tod:m.tod,wx:m.wx}; startDuel(); break;
+    case 's': if(remoteAv){ duel.rt=v3(m.p); duel.ry=m.y; duel.rc=m.c; duel.rpi=m.pi; } break;
+    case 'fire': remoteShot(v3(m.e),m.w); break;
+    case 'hit': if(isDuel() && !playerDead && protectT<=0 && state!=='menu'){ if(m.h) lastHeadshot=true; damagePlayer(m.d,remoteAv?remoteAv.pos:player.pos); } break;
+    case 'nade': { const g=makeGrenadeMesh(duel.them?duel.them.side:'german'); g.position.copy(v3(m.p)); scene.add(g);
+      grenades.push({m:g,pos:g.position,vel:v3(m.v),fuse:m.f||2.6,spin:new V3(6,3,6),owner:'remote'}); break; }
+    case 'died': duel.score[0]++; kills++; if(remoteAv){ remoteAv.dead=true; remoteAv.deadT=0; remoteAv.fallDir=1; }
+      showMsg(`YOU GOT HIM!  ${duel.score[0]} – ${duel.score[1]}`,2); tone(900,1200,0.1,0.2,'square'); duelCheckWin(); break;
+    case 'respawn': if(remoteAv){ remoteAv.dead=false; remoteAv.deadT=0; remoteAv.body.rotation.set(0,0,0); remoteAv.body.position.y=0; remoteAv.pos.copy(v3(m.p)); duel.rt=v3(m.p); } break;
+    case 'rematch': duel.ready.them=true; tryRematch(); break;
+    case 'bye': duelLost('Your friend left the game.'); break;
+  }
+}
+const pvpDamage=(W,head)=>(W.scope||W.bolt?100:W.dmg>=100?70:34)*(head?2:1);
+function startDuel(){
+  hideMenus(); $('duelOver').style.display='none';
+  if(currentMap!=='duel'){ leaveTankMode(); clearSoldiers(); buildMap('duel'); visCols=null; }
+  clearSoldiers(); leaveTankMode(); resetProps(); resetArtillery();
+  for(const g of grenades) scene.remove(g.m); grenades.length=0;
+  selSide=duelSide; selWeapon=duelWeapon;
+  const W=WEAPONS[duelWeapon];
+  Object.assign(gun,{type:duelWeapon,ammo:W.mag,reserve:W.reserve*2,cooldown:0,reloading:0,bolt:0,ads:0,kick:0,flash:0,sprintT:0});
+  buildViewmodel(duelSide,duelWeapon); buildCrosshair();
+  applyAtmosphere(duel.atmo.tod,duel.atmo.wx); atmoLabel=`${TODS[duel.atmo.tod].name}`;
+  if(remoteAv){ scene.remove(remoteAv.root); const i=shootables.indexOf(remoteAv.root); if(i>=0) shootables.splice(i,1); }
+  remoteAv=makeSoldier(duel.them.side,duel.them.weapon,null); initAI(remoteAv,'enemy','idle'); remoteAv.remote=true;
+  scene.add(remoteAv.root); shootables.push(remoteAv.root);
+  const theirs=DUEL_SPAWNS[duel.host?'b':'a'][1]; remoteAv.pos.set(theirs[0],0,theirs[1]); duel.rt=remoteAv.pos.clone(); duel.ry=duel.host?Math.PI:0;
+  duel.score=[0,0]; duel.ready={me:false,them:false}; duel.sendT=0; duel.respT=0; duel.over=false;
+  kills=0; battle={total:0,spawned:0,killed:0,spawnT:0,done:false};
+  duelPlaceMe(DUEL_SPAWNS[duel.host?'a':'b'][1]);
+  musicStart(); MUS.int=0.4;
+  $('hud').style.display='block'; $('objBox').style.display='none'; $('mapdone').style.opacity=0; $('dead').style.display='none';
+  $('side').textContent=`1v1 DUEL · ${SIDES[duelSide].title} · ${W.name} · ${atmoLabel}`; $('side').style.color=SIDES[duelSide].color;
+  state='paused'; $('pause').style.display='flex';
+  setTimeout(()=>showMsg(`1v1 DUEL · FIRST TO ${DUEL_WIN} KILLS`,3),300);
+}
+function duelPlaceMe(sp){
+  Object.assign(player,{pos:new V3(sp[0],0,sp[1]),vel:new V3(),yaw:duel.host?0:Math.PI,pitch:0,onGround:true,crouch:false,crouchToggle:false,stamina:1,landDip:0,recoilAcc:0});
+  playerHP=100; hurtT=0; lastHurt=99; playerDead=false; grenadesLeft=2;
+  const W=WEAPONS[gun.type]; gun.ammo=W.mag; gun.reloading=0;
+  protectT=2.5;
+}
+function duelPlayerDied(){
+  playerDead=true; state='dead'; mouseDown=rmb=false;
+  duel.score[1]++; duelSend({t:'died'});
+  showMsg(`YOU WERE KILLED  ${duel.score[0]} – ${duel.score[1]}`+(duel.score[1]<DUEL_WIN?' · RESPAWNING…':''),2.6);
+  noise(0.5,300,0.4,'lowpass'); duel.respT=3; duelCheckWin();
+}
+function duelRespawn(){
+  // respawn at the spawn point furthest from your friend
+  const list=DUEL_SPAWNS[duel.host?'a':'b'].concat(DUEL_SPAWNS[duel.host?'b':'a']);
+  let best=list[0], bd=-1; for(const sp of list){ const d=remoteAv?Math.hypot(sp[0]-remoteAv.pos.x,sp[1]-remoteAv.pos.z):0; if(d>bd){ bd=d; best=sp; } }
+  duelPlaceMe(best); state='playing'; duelSend({t:'respawn',p:arr(player.pos)});
+}
+function duelCheckWin(){
+  if(duel.over) return;
+  const won=duel.score[0]>=DUEL_WIN, lost=duel.score[1]>=DUEL_WIN; if(!won && !lost) return;
+  duel.over=true; sting(won?'victory':'death');
+  setTimeout(()=>{ if(!duel) return; state='menu'; mouseDown=rmb=false; document.body.style.cursor='default'; if(document.pointerLockElement) document.exitPointerLock();
+    $('hud').style.display='none'; $('doTitle').textContent=won?'YOU WIN THE DUEL!':'YOUR FRIEND WINS'; $('doTitle').style.color=won?'#9be38f':'#ff8a6a';
+    $('doText').textContent=`FINAL SCORE ${duel.score[0]} – ${duel.score[1]}`; $('doRematch').textContent='REMATCH'; $('duelOver').style.display='flex'; },2200);
+}
+function tryRematch(){
+  if(!duel) return;
+  if(duel.ready.me && !duel.ready.them) $('doRematch').textContent='WAITING FOR FRIEND…';
+  if(duel.ready.me && duel.ready.them && duel.host) hostStart();
+}
+function remoteShot(end,heavy){
+  if(!remoteAv || remoteAv.dead) return;
+  const m=new V3(); remoteAv.weaponObj.userData.muzzle.getWorldPosition(m);
+  const g=new THREE.BufferGeometry().setFromPoints([m,end]); const ln=new THREE.Line(g,tracerMat); scene.add(ln); tracers.push({ln,t:0.05});
+  remoteAv.flashT=0.05; remoteAv.muzzleFlash.visible=true;
+  sndShot(heavy, Math.min(1,8/(m.distanceTo(camera.position)+2)));
+  const dir=end.clone().sub(m).normalize(), toCam=camera.position.clone().sub(m), along=toCam.dot(dir);
+  if(along>0 && toCam.clone().sub(dir.clone().multiplyScalar(along)).length()<2.5) sndWhizz();
+  spawnPuff(end,0x8a7e70,0.5);
+}
+function updateDuel(dt,t){
+  if(!duel){ return; }
+  if(protectT>0) protectT=Math.max(0,protectT-dt);
+  const pe=$('protect'); pe.style.opacity=protectT>0?1:0; if(protectT>0) pe.textContent=`🛡 SPAWN PROTECTION · ${Math.ceil(protectT)}`;
+  updateGrenades(dt);
+  for(let i=tracers.length-1;i>=0;i--){ tracers[i].t-=dt; if(tracers[i].t<=0){ scene.remove(tracers[i].ln); tracers[i].ln.geometry.dispose(); tracers.splice(i,1); } }
+  lastHurt+=dt; if(!playerDead && lastHurt>4 && playerHP<100) playerHP=Math.min(100,playerHP+25*dt);
+  hurtT=Math.max(0,hurtT-dt*0.6);
+  $('vig').style.opacity=Math.min(1,hurtT*0.8+(1-playerHP/100)*0.55);
+  $('hpbar').style.width=playerHP+'%'; $('hpbar').style.background=playerHP>50?'#cfd8b8':playerHP>25?'#e0b050':'#d0603c';
+  const dd=$('dmgdir'); if(+dd.dataset.t>0){ dd.dataset.t=+dd.dataset.t-dt; dd.style.opacity=Math.max(0,+dd.dataset.t); }
+  // the other player
+  if(remoteAv){
+    if(remoteAv.dead) animateDead(remoteAv,dt);
+    else {
+      const ox=remoteAv.pos.x, oz=remoteAv.pos.z;
+      remoteAv.pos.lerp(duel.rt,Math.min(1,dt*12)); remoteAv.pos.y=Math.max(0,duel.rt.y);
+      remoteAv.speed=Math.hypot(remoteAv.pos.x-ox,remoteAv.pos.z-oz)/Math.max(dt,1e-4);
+      remoteAv.heading=angLerp(remoteAv.heading,duel.ry||0,Math.min(1,dt*14)); remoteAv.root.rotation.y=remoteAv.heading;
+      remoteAv.wantCrouch=!!duel.rc; remoteAv.aimPitch=(duel.rpi||0);
+      animateSoldier(remoteAv,dt,t);
+    }
+    if(remoteAv.flashT>0){ remoteAv.flashT-=dt; if(remoteAv.flashT<=0) remoteAv.muzzleFlash.visible=false; }
+  }
+  duel.sendT-=dt;
+  if(duel.sendT<=0){ duel.sendT=0.05; duelSend({t:'s',p:arr(player.pos),y:+player.yaw.toFixed(3),pi:+player.pitch.toFixed(3),c:player.crouch?1:0}); }
+  if(playerDead && !duel.over){ duel.respT-=dt; if(duel.respT<=0) duelRespawn(); }
+  $('waveInfo').textContent=`1v1 DUEL · YOU ${duel.score[0]} – ${duel.score[1]} FRIEND · FIRST TO ${DUEL_WIN}`;
+  musicSetIntensity(0.55); musicUpdate(dt);
+}
+
 /* ================= SAVE GAME (stored in this browser) ================= */
 const SAVE_KEY='easternFront_save_v1';
 function readSave(){ try{ const t=localStorage.getItem(SAVE_KEY); if(!t) return null; const d=JSON.parse(t); if(d && !MAPS[d.map]) d.map='stalingrad'; return (d && SIDES[d.side] && WEAPONS[d.weapon]) ? d : null; }catch(e){ return null; } }
 function writeSave(silent){
+  if(isDuel()) return true;
   try{
     localStorage.setItem(SAVE_KEY,JSON.stringify({map:currentMap,mapName:MAPS[currentMap].name,reserve:gun.reserve,side:selSide,weapon:gun.type,
       killed:battle.killed,kills,checkpoint,phase:moscowPhase,savedAt:Date.now()}));
@@ -3999,6 +4499,7 @@ function goToMap(id){
 let atmoLabel='';
 function startGame(){
   if(currentMap!=='moscow') moscowPhase=1;
+  resetProps();
   setSpawn(); resetArtillery(); mhold={t:MOSCOW_HOLD,prog:0};
   atmoLabel=rollAtmosphere();
   startProtection();
@@ -4066,6 +4567,13 @@ function showAudioInfo(){
 addEventListener('keydown',e=>{ if(e.code==='Escape' && state==='playing' && cursorMode) pauseGame(); });
 addEventListener('mousemove',e=>{ mouseX=e.clientX; });
 $('deploy').onclick=()=>startMission(briefMission);
+$('duelBtn').onclick=()=>showDuelMenu();
+$('duelHostBtn').onclick=()=>duelHost();
+$('duelJoinBtn').onclick=()=>duelJoin();
+$('duelCode').addEventListener('keydown',e=>{ e.stopPropagation(); if(e.key==='Enter') duelJoin(); });
+$('duelBack').onclick=()=>{ closeDuel(); $('toMenu').onclick(); };
+$('doRematch').onclick=()=>{ if(!duel) return; duel.ready.me=true; duelSend({t:'rematch'}); tryRematch(); };
+$('doLeave').onclick=()=>{ closeDuel(); $('toMenu').onclick(); };
 $('msBack').onclick=()=>$('toMenu').onclick();
 $('bBack').onclick=()=>showMissions();
 $('dMissions').onclick=()=>showMissions();
@@ -4086,6 +4594,7 @@ $('respawnBtn').onclick=()=>{
 };
 $('deadMenu').onclick=()=>{ playerDead=false; $('dead').style.display='none'; $('toMenu').onclick(); };
 $('toMenu').onclick=()=>{
+  if(duel && isDuel()) closeDuel();
   leaveTankMode();
   refreshContinue();
   state='menu'; musicStop(1);
@@ -4253,15 +4762,16 @@ function updatePlayer(dt){
   const throwK = throwT>0 ? Math.sin((1-throwT/0.55)*Math.PI) : 0;
   vmRoot.position.set(
     p.x + bobX*0.6 - gun.swayX + gun.sprintT*0.04 + throwK*0.1,
-    p.y + bobY*0.5 + gun.swayY - reloadK*0.12 - gun.sprintT*0.05 - throwK*0.35,
+    p.y + bobY*0.5 + gun.swayY - reloadK*0.05 - gun.sprintT*0.05 - throwK*0.35,
     p.z + gun.kick*(W.heavy?0.09:0.035)
   );
   vmRoot.rotation.set(
-    gun.kick*(W.heavy?0.12:0.04) - reloadK*0.5 - gun.sprintT*0.3 - throwK*0.7,
+    gun.kick*(W.heavy?0.12:0.04) + reloadK*0.18 - gun.sprintT*0.3 - throwK*0.7,
     gun.sprintT*0.7 - gun.swayX*2,
-    reloadK*0.6 + boltK*0.35 + gun.sprintT*0.2
+    reloadK*0.45 + boltK*0.2 + gun.sprintT*0.2
   );
 
+  animateReload(W);
   // muzzle flash
   gun.flash-=dt;
   const fOn=gun.flash>0;
@@ -4286,11 +4796,12 @@ function loop(now){
   requestAnimationFrame(loop);
   const dt=Math.min(0.05,(now-last)/1000); last=now; T+=dt;
 
-  if(state==='dead'){ if(isTankMap()) updateTankBattle(dt,T); else updateCombat(dt,T); }
+  if(state==='dead'){ if(isDuel()) updateDuel(dt,T); else if(isTankMap()) updateTankBattle(dt,T); else updateCombat(dt,T); }
+  if(state==='paused' && isDuel()) updateDuel(dt,T);
   if(state==='playing' && isTankMap()){ updateTankPlayer(dt); updateTankBattle(dt,T); }
   else if(state==='playing'){
     updatePlayer(dt);
-    updateCombat(dt,T);
+    if(isDuel()) updateDuel(dt,T); else updateCombat(dt,T);
   } else if(state==='menu'){
     menuT+=dt*0.12;
     camera.position.set(SPAWN.x+Math.sin(menuT)*7.5, 2.3, SPAWN.z+Math.cos(spawnYaw)*1.8+Math.cos(menuT)*7.5);
@@ -4298,8 +4809,8 @@ function loop(now){
     camera.lookAt(SPAWN.x,1.1,SPAWN.z+Math.cos(spawnYaw)*1.8);
     updateSoldiers(dt,T,SPAWN,spawnYaw);
   }
-  updatePuffs(dt);
-  if(state==='playing'||state==='dead') updateArtillery(dt,T);
+  updatePuffs(dt); updateProps(dt);
+  if((state==='playing'||state==='dead') && !isDuel()) updateArtillery(dt,T);
   updateFlares(dt);
   if(currentMap==='seelow') updateSearchBeams(T);
   updateTouchUI();
