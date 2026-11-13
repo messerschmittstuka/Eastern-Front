@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
 <title>Eastern Front – WW2</title>
+<meta name="description" content="Eastern Front – a free WW2 first-person shooter in your browser. Fight as the Red Army or the Wehrmacht through Stalingrad, Moscow, Kursk, the Seelow Heights and Berlin, with tanks, ranks and medals.">
+<meta property="og:title" content="Eastern Front – WW2">
+<meta property="og:description" content="Free WW2 shooter in your browser: Stalingrad, Moscow, Kursk, Seelow Heights and Berlin. Play as the Red Army or the Wehrmacht.">
+<meta property="og:type" content="website">
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:'Courier New',monospace;color:#e8e2d0;user-select:none}
   canvas{display:block}
@@ -1233,9 +1237,9 @@ const MAPS={
     sky:0x847a6d,fog:[8,105],hemi:[0xd6c8b2,0x4a4038,1.25],sun:[0xffc890,1.5]},
   seelow:{id:'seelow',name:'Seelow Heights · April 1945',short:'SEELOW HEIGHTS',build:buildSeelow,snow:false,mode:'infantry',total:150,tex:mudTex,maxActive:IS_TOUCH?12:18,
     sky:0x5d6573,fog:[10,100],hemi:[0xb4bccb,0x3e3a30,1.15],sun:[0xffb878,1.25]},
-  moscow:{id:'moscow',name:'Moscow · December 1941',short:'MOSCOW',build:buildMoscow,snow:true,mode:'mixed',total:8,tex:snowTex,maxActive:IS_TOUCH?10:14,
+  moscow:{id:'moscow',name:'Moscow · December 1941',short:'MOSCOW',build:buildMoscow,snow:true,mode:'mixed',total:4,tex:snowTex,maxActive:IS_TOUCH?10:14,
     sky:0x9aa2ab,fog:[10,115],hemi:[0xdde4ee,0x5a5650,1.35],sun:[0xfff0dc,1.4],
-    tank:{total:8,start:[0,58],allies:[[-8,64],[8,64],[0,68]],spawns:[[-30,-8],[30,-10],[0,-18],[-24,-20],[24,-20],[-45,6],[45,2],[0,-48]],maxActive:IS_TOUCH?3:4,hunt:true,
+    tank:{total:4,start:[0,58],allies:[[-8,64],[8,64],[0,68]],spawns:[[-30,-8],[30,-10],[0,-18],[-24,-20],[24,-20],[-45,6],[45,2],[0,-48]],maxActive:4,hunt:true,
       inf:{ally:[[-5,62],[5,62],[-4,66],[4,66]],enemy:[[-10,-18],[10,-18],[-4,-30],[4,-30],[-20,-6],[20,-6]],at:1}}}
 };
 const MAP_ORDER=['stalingrad','kursk','berlin','seelow','moscow'];   // (order only sets each map's random seed)
@@ -3527,7 +3531,7 @@ const STORY={
    brief:[`It is minus thirty. German tanks have broken through near Krasnaya Polyana and are pushing down the Leningrad Highway towards the city. In places they are less than thirty kilometres from the Kremlin.`,
           `Our company has orders to race up the highway, smash their lead tanks on the road and reach the factory district at the city's edge before they do.`,
           `When you reach the factory yard, leave the tank and dig in with the riflemen. Hold that yard until the fresh Siberian divisions arrive. Moscow will not fall.`],
-   obj:'Part 1: destroy 8 German tanks and drive into the factory yard. Part 2: on foot, hold the yard for 4 minutes until relief arrives.',
+   obj:'Part 1: 4 of our tanks against 4 German tanks. Destroy them and drive into the factory yard. Part 2: on foot, hold the yard for 4 minutes until relief arrives.',
    debrief:[`You held the yard. Up and down the line, others held too.`,
             `On 5 December, in temperatures far below freezing, fresh divisions from Siberia and the Far East launch the counter-offensive. For the first time in the war, the German army is thrown back, in places by more than 200 kilometres.`,
             `Moscow is saved. The myth that the Wehrmacht cannot be beaten is broken.`]},
@@ -3574,7 +3578,7 @@ const STORY={
    brief:[`This mission is a "what if". In reality our spearheads stopped about 30 kilometres from Moscow; some men claimed they could see the Kremlin towers through binoculars.`,
           `It is minus thirty. Our engines will not start without fires lit under them and the men are still in summer uniforms. The orders say: one last push down the Leningrad Highway, destroy the T-34s blocking the road, seize the factory at the city's edge.`,
           `Once there, dismount and hold the yard against the counter-attack until the rest of the division catches up.`],
-   obj:'Part 1: destroy 8 Soviet tanks and drive into the factory yard. Part 2: on foot, hold the yard for 4 minutes until relief arrives.',
+   obj:'Part 1: 4 of our tanks against 4 Soviet tanks. Destroy them and drive into the factory yard. Part 2: on foot, hold the yard for 4 minutes until relief arrives.',
    debrief:[`You held the yard, in this "what if". In the real war, nobody got this far.`,
             `On 5 December the Soviets counter-attack with fresh divisions from Siberia, trained and equipped for winter. The army is thrown back up to 250 kilometres. Thousands freeze to death.`,
             `The quick victory everyone was promised is gone. The war in the East will last three and a half more years.`]},
@@ -3618,7 +3622,7 @@ const STORY={
 };
 const MISSION_INFO={
   stalingrad:{n:'I',mode:'On foot · 6 vs 50',color:'#c9d3dc'},
-  moscow:{n:'II',mode:'Tank drive, then on foot · hold until relief',color:'#c9d3dc'},
+  moscow:{n:'II',mode:'4 vs 4 tank battle, then on foot · hold until relief',color:'#c9d3dc'},
   kursk:{n:'III',mode:'Tank battle · 8 vs 20 + infantry',color:'#d8c98a'},
   seelow:{n:'IV',mode:'On foot · 6 vs 150 · hopelessly outnumbered',color:'#a9b4c6'},
   berlin:{n:'V',mode:'On foot · storm / hold the Reichstag',color:'#d09a7a'}
@@ -3910,7 +3914,7 @@ function clearSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
 function refreshContinue(){
   const d=readSave(), b=$('continueBtn');
   if(d){ b.style.display='block'; $('deleteSave').style.display='block';
-    const prog = d.map==='moscow' ? (d.phase===2?'ON FOOT, HOLDING THE YARD':`${8-(d.killed||0)} TANKS LEFT`) : `${(MAPS[d.map].total||50)-(d.killed||0)} ENEMIES LEFT`;
+    const prog = d.map==='moscow' ? (d.phase===2?'ON FOOT, HOLDING THE YARD':`${MAPS.moscow.tank.total-(d.killed||0)} TANKS LEFT`) : `${(MAPS[d.map].total||50)-(d.killed||0)} ENEMIES LEFT`;
     b.innerHTML=`CONTINUE<div style="font-size:13px;letter-spacing:1px;margin-top:4px;opacity:.8">${d.mapName||'Stalingrad'} · ${SIDES[d.side].title} · ${WEAPONS[d.weapon].name} · ${prog} · ${d.kills} KILLS</div>`; }
   else { b.style.display='none'; $('deleteSave').style.display='none'; }
 }
