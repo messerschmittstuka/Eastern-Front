@@ -3823,6 +3823,7 @@ function airLeave(){
   if(!air.on) return;
   air.on=false; air.phase='off'; airStopSounds();
   if(air.ck){ viewScene.remove(air.ck); air.ck=null; }
+  air.sight=false; { const s=$('ahSight'); if(s) s.style.display='none'; }
   if(air.root){ scene.remove(air.root); air.root.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); air.root=null; }
   air.T=[]; air.bld=null; air.fires=[]; air.wing=[]; air.bombs=[]; air.fighters=[];
   mapRoot.visible=true; ground.visible=true;
@@ -3870,7 +3871,7 @@ function airUpdateSounds(dt){
 // ---------- controls ----------
 function airKey(e){
   if(e.code==='Space'){ airDropBomb(); e.preventDefault(); }
-  else if(e.code==='KeyQ') airSwitchBomb();
+  else if(e.code==='KeyE') airSwitchBomb();
   else if(e.code==='KeyC') air.view=(air.view+1)%2;
   else if(e.code==='KeyI'){ air.inv=!air.inv; showMsg(air.inv?'PULL BACK / DOWN = NOSE UP':'PUSH FORWARD / UP = NOSE UP',1.5); }
 }
@@ -3893,6 +3894,7 @@ function airDropBomb(){
   m.rotation.order='YXZ';
   air.bombs.push({x:P.x,y:P.y-1.4,z:P.z,vx,vy:vy-1,vz,heavy,dive:P.p<-0.7&&P.y<900,m,age:0});
   air.stats.dropped++;
+  if(P.p<-0.2){ P.pullout=true; airWarn('AUTO PULL-OUT',0.8); }       // like the real Stuka: releasing the bomb pulls the nose up by itself
   tone(2400,800,1.8,0.04,'sine'); noise(0.15,900,0.12,'lowpass');
   if(P.bH+P.bL===0) setTimeout(()=>{ if(air.on&&air.phase==='fly') showMsg('BOMBS GONE · RETURN TO THE AIRFIELD AND LAND',3.5); },1800);
 }
@@ -4262,6 +4264,10 @@ function airMakeHud(){
 #ahCcip{position:absolute;width:34px;height:34px;margin:-17px 0 0 -17px;border:2px solid #ffd23a;border-radius:50%;display:none}
 #ahCcip::before{content:'';position:absolute;left:50%;top:-8px;bottom:-8px;width:2px;margin-left:-1px;background:#ffd23a}
 #ahCcip::after{content:'';position:absolute;top:50%;left:-8px;right:-8px;height:2px;margin-top:-1px;background:#ffd23a}
+#ahSight{position:absolute;inset:0;display:none;background:radial-gradient(circle at 50% 50%,rgba(0,0,0,0) 0,rgba(0,0,0,0) 36vmin,#050605 36.5vmin)}
+#ahSight::before{content:'';position:absolute;left:50%;top:50%;width:73vmin;height:73vmin;margin:-36.5vmin 0 0 -36.5vmin;border-radius:50%;box-shadow:inset 0 0 0 4px #1b1e1b,inset 0 0 0 6px rgba(255,170,80,.45);background:linear-gradient(rgba(255,170,80,.7),rgba(255,170,80,.7)) center/1px 100% no-repeat,linear-gradient(rgba(255,170,80,.7),rgba(255,170,80,.7)) center/100% 1px no-repeat}
+#ahSight::after{content:'';position:absolute;left:50%;top:50%;width:22vmin;height:22vmin;margin:-11vmin 0 0 -11vmin;border-radius:50%;border:1px solid rgba(255,170,80,.65)}
+#ahSight span{position:absolute;left:50%;bottom:calc(50% - 34vmin);transform:translateX(-50%);font-size:12px;letter-spacing:3px;color:rgba(255,190,110,.85)}
 #ahG{position:absolute;inset:0;background:radial-gradient(circle,rgba(0,0,0,0) 18%,rgba(0,0,0,.98) 72%);opacity:0}
 .ahM{position:absolute;display:none;transform:translate(-50%,-100%);font-size:11px;white-space:nowrap;text-align:center;padding:1px 6px;background:rgba(0,0,0,.45);border:1px solid rgba(255,210,60,.75);color:#ffe9a0}
 .ahM.f{border-color:rgba(120,230,150,.8);color:#bff0c8} .ahM.a{border-color:rgba(255,100,80,.8);color:#ffb0a0;font-size:10px;padding:0 3px}
@@ -4270,7 +4276,7 @@ body.airmode #tReload,body.airmode #tJump,body.airmode #tCrouch,body.airmode #tS
     (document.head||document.body).appendChild(st);
     const w=document.createElement('div'); w.id='ahWrap';
     let lad=''; for(let d=-90;d<=90;d+=10) lad+=`<div class="ahL${d===0?' z':''}" style="top:${150-d*6}px">${d!==0?`<span>${Math.abs(d)}</span>`:''}</div>`;
-    w.innerHTML=`<div id="ahHor"><div id="ahLad">${lad}</div></div><div id="ahMid"></div><div id="ahSpd" class="ahBox"></div><div id="ahAlt" class="ahBox"></div><div id="ahHdg"></div><div id="ahWarn"></div><div id="ahTip"></div><div id="ahCcip"></div><div id="ahG"></div><div id="ahMarks"></div>`;
+    w.innerHTML=`<div id="ahSight"><span>BOMBENZIELGERÄT · HOLD Q</span></div><div id="ahHor"><div id="ahLad">${lad}</div></div><div id="ahMid"></div><div id="ahSpd" class="ahBox"></div><div id="ahAlt" class="ahBox"></div><div id="ahHdg"></div><div id="ahWarn"></div><div id="ahTip"></div><div id="ahCcip"></div><div id="ahG"></div><div id="ahMarks"></div>`;
     $('hud').appendChild(w);
     air.marks=[]; const mk=$('ahMarks'); for(let i=0;i<24;i++){ const d=document.createElement('div'); d.className='ahM'; mk.appendChild(d); air.marks.push(d); }
   }
@@ -4282,6 +4288,7 @@ function airHud(dt){
   const deg=v=>v*180/Math.PI, hdg=((Math.round(deg(P.h))%360)+360)%360;
   $('ahLad').style.transform=`translateY(${(deg(P.p)*6).toFixed(1)}px) rotate(${(-deg(P.r)).toFixed(1)}deg)`;
   $('ahSpd').textContent=`${Math.round(P.s*3.6)} km/h`; $('ahAlt').textContent=`${Math.round(P.y)} m`;
+  $('ahSight').style.display=air.sight?'block':'none';
   document.body.classList.toggle('airck',air.view===1&&air.phase!=='crashed');
   { const inCk=air.view===1&&air.phase!=='crashed'; $('ahSpd').style.display=inCk?'none':''; $('ahAlt').style.display=inCk?'none':''; }
   $('ahHdg').textContent=`${String(hdg).padStart(3,'0')}° ${AIR_COMPASS[Math.round(hdg/45)%8]}   THR ${Math.round(P.thr*100)}%   DIVE ${Math.max(0,Math.round(-deg(P.p)))}°${P.brake?'  BRAKES':''}`;
@@ -4292,7 +4299,7 @@ function airHud(dt){
   $('ahWarn').textContent=warn&&fl?warn:'';
   // tip
   air.tipT-=dt; const tp=$('ahTip');
-  tp.textContent = air.tipT>0 ? (IS_TOUCH?'Stick: steer · BOMB: drop · GUNS: fire · TYPE: bomb kind · RUN: dive brakes':'MOUSE steer (or A/D + arrows) · W/S speed · SPACE drop bomb · Q bomb type · CLICK guns · SHIFT dive brakes · Z/X look left/right (dive-angle marks) · C outside view') : '';
+  tp.textContent = air.tipT>0 ? (IS_TOUCH?'Stick: steer · BOMB: drop · GUNS: fire · TYPE: bomb kind · RUN: dive brakes':'MOUSE steer (or A/D + arrows) · W/S speed · SPACE drop bomb · E bomb type · HOLD Q bomb sight · CLICK guns · SHIFT dive brakes · Z/X look left/right · C outside view') : '';
   tp.style.display=air.tipT>0?'block':'none'; tp.style.opacity=Math.min(1,Math.max(0,air.tipT)).toFixed(2);
   $('ahG').style.opacity=aClamp((P.g-3.3)/5,0,0.9).toFixed(2);
   // bars and text
@@ -4309,7 +4316,7 @@ function airHud(dt){
   $('objFill').style.width=Math.min(100,air.score/AIR.PASS*100)+'%'; $('objFill').style.background=passed?'#8fe39b':'#e0b050';
   // dive sight
   const cc=$('ahCcip'), pr=airPredict(), v=new V3(pr.x,0,pr.z); v.project(camera);
-  if(air.phase==='fly' && P.p<-0.12 && v.z<1 && Math.abs(v.x)<1.1 && Math.abs(v.y)<1.1 && P.bH+P.bL>0){ cc.style.display='block'; cc.style.left=((v.x*0.5+0.5)*W)+'px'; cc.style.top=((-v.y*0.5+0.5)*H)+'px';
+  if(air.phase==='fly' && (P.p<-0.12||air.sight) && v.z<1 && Math.abs(v.x)<1.1 && Math.abs(v.y)<1.1 && P.bH+P.bL>0){ cc.style.display='block'; cc.style.left=((v.x*0.5+0.5)*W)+'px'; cc.style.top=((-v.y*0.5+0.5)*H)+'px';
     let over=false; for(const t of air.T) if(!t.dead && t.kind!=='flak' && aDistBox(pr.x,pr.z,t)<(P.sel==='heavy'?10:4)){ over=true; break; } cc.style.borderColor=over?'#6dff7a':'#ffd23a'; }
   else cc.style.display='none';
   // target markers
@@ -4494,7 +4501,7 @@ const _ckY=new THREE.Vector3(0,1,0);
 function ckLimb(mesh,a,b){ const d=new THREE.Vector3().subVectors(b,a), len=d.length(); mesh.position.copy(a).addScaledVector(d,0.5); mesh.scale.set(1,len,1); mesh.quaternion.setFromUnitVectors(_ckY,d.normalize()); }
 function airCockpit(dt){
   const ck=air.ck; if(!ck) return; const K=ck.userData, P=air.pl;
-  const show=air.view===1 && air.phase!=='crashed'; ck.visible=show; if(!show){ air.head=0; return; }
+  const show=air.view===1 && air.phase!=='crashed' && !air.sight; ck.visible=show; if(!show){ air.head=0; return; }
   // needles
   const rz=(n,v)=>{ n.rotation.z=v; };
   rz(K.speed,ckRot(aClamp(P.s*3.6/CK_G.speed.max,0,1.02),CK_G.speed.sweep));
@@ -4536,6 +4543,13 @@ function airCamera(dt){
   air.pm.prop.rotation.z+=dt*(P.fuel>0?60+P.thr*90:8);
   for(const sp of air.pm.sirenProps) sp.rotation.z+=dt*(P.s>88&&P.p<-0.6?90:14);
   const crashed=air.phase==='crashed';
+  if(air.sight && !crashed){
+    // the bomb sight: looking straight down through the floor, the top of the picture is the way you are heading
+    air.pm.g.visible=false; air.cam=null;
+    camera.position.set(P.x+(Math.random()-.5)*sh*0.3,P.y-2,P.z+(Math.random()-.5)*sh*0.3);
+    camera.quaternion.copy(new THREE.Quaternion().setFromEuler(new THREE.Euler(-1.5,-P.h,0,'YXZ'))); camera.fov=46; camera.updateProjectionMatrix();
+    return;
+  }
   if(air.view===0 || crashed){
     const back=16+(P.s-70)*0.05, tx=P.x-fx*back, ty=P.y-fy*back+4.6, tz=P.z-fz*back;
     if(!air.cam) air.cam={x:tx,y:ty,z:tz};
@@ -4559,6 +4573,7 @@ function airFrame(dt){
   airFlight(dt);
   airUpdateBombs(dt); airFireGuns(dt); airUpdateFlak(dt); airUpdateBursts(dt); airUpdateFighters(dt); airUpdateWorld(dt); airUpdateTracers(dt); airUpdateFires(dt);
   for(let i=air.delayed.length-1;i>=0;i--){ const d=air.delayed[i]; d.t-=dt; if(d.t<=0){ air.delayed.splice(i,1); d.fn(); } }
+  air.sight=!!keys.KeyQ && air.phase==='fly' && state==='playing' && !IS_TOUCH;
   airCockpit(dt); airCamera(dt); if(air.sky) air.sky.position.copy(camera.position); airHud(dt); airUpdateSounds(dt);
   if(air.endT>0){ air.endT-=dt; if(air.endT<=0) airDebrief(); }
   // music follows the danger
@@ -4589,7 +4604,7 @@ function airDebrief(){
 const AIR_STORY={date:'September 1942',place:'A Luftwaffe airfield west of Stalingrad',title:'Stukas Over the Volga',
   from:'Hauptmann H. Brandt · Stukageschwader 2',
   brief:[`The 6th Army is fighting its way into Stalingrad street by street, and the Red Army still holds the factories and the river crossings behind it. Our infantry cannot take them while those guns and ferries keep working.`,
-         `That is a job for the Stuka. You fly a Junkers Ju 87 with a rear gunner behind you. Climb to altitude, find your target, roll over and dive steeply. The sirens on the landing gear will scream as you fall, and the automatic pull-out will lift the nose if you leave it too late.`,
+         `That is a job for the Stuka. You fly a Junkers Ju 87 with a rear gunner behind you. Climb to altitude, find your target, roll over and dive steeply. The sirens on the landing gear will scream as you fall, and the automatic pull-out will lift the nose as soon as you release a bomb, or if you leave it too late.`,
          `Choose your targets. The big SC 500 bomb breaks factories and bunkers; the small SC 50s are for guns, boats and flak. Soviet anti-aircraft guns ring the city and Yak fighters will come for you. Come home with fuel, and land on the runway.`],
   obj:`Fly east to Stalingrad and score ${AIR.PASS} points by bombing factories, the rail yard, fuel tanks, ferries, guns and the army headquarters. Survive flak and fighters. Fly back and land on the airfield runway.`};
 function showAirBriefing(){
@@ -4600,7 +4615,7 @@ function showAirBriefing(){
   $('bObj').innerHTML='<b>OBJECTIVE</b> · '+st.obj;
   $('weapons').style.display='none'; $('coopBtn').style.display='none'; $('classPick').innerHTML=''; $('modePick').innerHTML=''; $('squadPick').innerHTML='';
   $('bTank').style.display='block';
-  $('bTank').textContent='Your aircraft: Ju 87 Stuka · Mouse steers (or A/D + arrows) · W/S speed · Space drops a bomb · Q changes bomb · Click fires guns · Shift dive brakes · Z/X look out of the side windows · C outside view';
+  $('bTank').textContent='Your aircraft: Ju 87 Stuka · Mouse steers (or A/D + arrows) · W/S speed · Space drops a bomb · E changes bomb · Hold Q to look down through the bomb sight · Click fires guns · Shift dive brakes · Z/X look out of the side windows · C outside view';
 }
 
 /* ================= TANK BATTLE (Kursk) ================= */
@@ -7535,7 +7550,7 @@ function loop(now){
   renderer.clear();
   renderer.render(scene,camera);
   if(state!=='menu' && state!=='dead' && vmWeapon && !isTankMap() && !air.on && !binoc && !mounted && !(WEAPONS[gun.type].scope && gun.ads>0.85)){ renderer.clearDepth(); renderer.render(viewScene,viewCam); }
-  else if(air.on && air.ck && air.view===1 && air.phase!=='crashed' && state!=='menu'){ vmRoot.visible=false; renderer.clearDepth(); renderer.render(viewScene,viewCam); vmRoot.visible=true; }
+  else if(air.on && air.ck && air.view===1 && !air.sight && air.phase!=='crashed' && state!=='menu'){ vmRoot.visible=false; renderer.clearDepth(); renderer.render(viewScene,viewCam); vmRoot.visible=true; }
 }
 requestAnimationFrame(loop);
 </script>
